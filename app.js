@@ -75,6 +75,11 @@
     deleteTravelInfoBtn: $('deleteTravelInfoBtn'), backTravelInfoBtn: $('backTravelInfoBtn'),
     saveTravelInfoBtn: $('saveTravelInfoBtn'),
 
+    googleSignedOutView: $('googleSignedOutView'), googleSignedInView: $('googleSignedInView'),
+    googleSignInBtn: $('googleSignInBtn'), googleBackupStatus: $('googleBackupStatus'),
+    driveBackupBtn: $('driveBackupBtn'), driveRestoreBtn: $('driveRestoreBtn'),
+    googleSignOutBtn: $('googleSignOutBtn'),
+
     toast: $('toast'),
   };
 
@@ -755,6 +760,7 @@
     pendingCountMode = state.trip.countMode === 'countup' ? 'countup' : 'countdown';
     renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode);
     renderPastTrips();
+    updateGoogleUI();
     openModal(el.settingsModalOverlay);
   }
   el.settingsBtn.addEventListener('click', openSettingsModal);
@@ -1229,6 +1235,200 @@
     openTravelInfoList();
   });
 
+  // ---------- Google Drive backup ----------
+  // Backs up to a single JSON file this app creates in the user's own Google Drive
+  // (drive.file scope — the app can only ever see files it created, nothing else in
+  // their Drive). Never goes through any server; never includes the Anthropic API key.
+  const GOOGLE_CLIENT_ID = '324499494473-n0m48riklpl2e1rajniop7v55363ptjf.apps.googleusercontent.com';
+  const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  const BACKUP_FILENAME = 'quick-budget-backup.json';
+
+  let googleTokenClient = null;
+  let googleAccessToken = null;
+  let googleAccessTokenExpiresAt = 0;
+
+  function initGoogleAuth() {
+    if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+      setTimeout(initGoogleAuth, 300); // the GIS script loads with `defer`, may not be ready yet
+      return;
+    }
+    googleTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: GOOGLE_DRIVE_SCOPE,
+      callback: () => {}, // replaced per-call in ensureGoogleAccessToken
+    });
+  }
+
+  function ensureGoogleAccessToken() {
+    return new Promise((resolve, reject) => {
+      if (!googleTokenClient) { reject(new Error('Google sign-in isn\'t ready yet — try again in a moment.')); return; }
+      if (googleAccessToken && Date.now() < googleAccessTokenExpiresAt - 60000) {
+        resolve(googleAccessToken);
+        return;
+      }
+      googleTokenClient.callback = (response) => {
+        if (response.error) { reject(new Error(`Google sign-in failed (${response.error}).`)); return; }
+        googleAccessToken = response.access_token;
+        googleAccessTokenExpiresAt = Date.now() + (response.expires_in * 1000);
+        resolve(googleAccessToken);
+      };
+      googleTokenClient.requestAccessToken({});
+    });
+  }
+
+  async function updateGoogleUI() {
+    const connected = await DB.getMeta('googleConnected', false);
+    el.googleSignedOutView.style.display = connected ? 'none' : '';
+    el.googleSignedInView.style.display = connected ? '' : 'none';
+    if (connected) {
+      const lastBackup = await DB.getMeta('lastBackupAt', null);
+      el.googleBackupStatus.textContent = lastBackup
+        ? `Last backed up ${fmtTimestamp(lastBackup)}`
+        : 'Not backed up yet.';
+    }
+  }
+
+  async function driveFindBackupFile(token) {
+    const q = encodeURIComponent(`name='${BACKUP_FILENAME}' and trashed=false`);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Could not reach Google Drive.');
+    const data = await res.json();
+    return (data.files && data.files[0]) || null;
+  }
+
+  function buildBackupPayload() {
+    return {
+      version: 1,
+      exportedAt: Date.now(),
+      activeTripId: state.trip.id,
+      trips: state.trips,
+      expenses: state.allExpenses,
+      checklist: state.allChecklist,
+      travelInfo: state.allTravelInfo,
+    };
+  }
+
+  async function driveUploadBackup(token, fileId, payload) {
+    const json = JSON.stringify(payload);
+    if (fileId) {
+      const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: json,
+      });
+      if (!res.ok) throw new Error('Drive upload failed.');
+      return res.json();
+    }
+    const boundary = 'quickbudget' + Date.now();
+    const metadata = JSON.stringify({ name: BACKUP_FILENAME, mimeType: 'application/json' });
+    const body =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${json}\r\n` +
+      `--${boundary}--`;
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    });
+    if (!res.ok) throw new Error('Drive upload failed.');
+    return res.json();
+  }
+
+  async function driveDownloadBackup(token, fileId) {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Could not download the backup file.');
+    return res.json();
+  }
+
+  async function restoreFromBackupPayload(payload) {
+    if (!payload || !Array.isArray(payload.trips)) throw new Error('That backup file looks invalid.');
+
+    const currentExpenses = await DB.getAllExpenses();
+    for (const e of currentExpenses) await DB.deleteExpense(e.id);
+    const currentChecklist = await DB.getAllChecklistItems();
+    for (const i of currentChecklist) await DB.deleteChecklistItem(i.id);
+    const currentTravelInfo = await DB.getAllTravelInfo();
+    for (const i of currentTravelInfo) await DB.deleteTravelInfo(i.id);
+    const currentTrips = await DB.getAllTrips();
+    for (const t of currentTrips) await DB.deleteTrip(t.id);
+
+    for (const t of payload.trips) await DB.putTrip(t);
+    for (const e of payload.expenses || []) await DB.putExpense(e);
+    for (const i of payload.checklist || []) await DB.putChecklistItem(i);
+    for (const i of payload.travelInfo || []) await DB.putTravelInfo(i);
+    if (payload.activeTripId) await DB.setMeta('activeTripId', payload.activeTripId);
+
+    const { trips, activeTrip } = await loadTripsAndActive();
+    state.trips = trips;
+    state.trip = activeTrip;
+    state.allExpenses = await DB.getAllExpenses();
+    state.allChecklist = await DB.getAllChecklistItems();
+    state.allTravelInfo = await DB.getAllTravelInfo();
+    renderAll();
+  }
+
+  el.googleSignInBtn.addEventListener('click', async () => {
+    try {
+      await ensureGoogleAccessToken();
+      await DB.setMeta('googleConnected', true);
+      await updateGoogleUI();
+      showToast('Connected to Google');
+    } catch (e) {
+      showToast(e.message || 'Google sign-in failed.');
+    }
+  });
+
+  el.driveBackupBtn.addEventListener('click', async () => {
+    if (el.driveBackupBtn.disabled) return;
+    el.driveBackupBtn.disabled = true;
+    try {
+      const token = await ensureGoogleAccessToken();
+      const existing = await driveFindBackupFile(token);
+      await driveUploadBackup(token, existing ? existing.id : null, buildBackupPayload());
+      await DB.setMeta('lastBackupAt', Date.now());
+      await updateGoogleUI();
+      showToast('Backed up to Google Drive');
+    } catch (e) {
+      showToast(e.message || 'Backup failed.');
+    } finally {
+      el.driveBackupBtn.disabled = false;
+    }
+  });
+
+  el.driveRestoreBtn.addEventListener('click', async () => {
+    if (el.driveRestoreBtn.disabled) return;
+    if (!confirm('This replaces ALL trip data currently on this device with your Google Drive backup. This cannot be undone. Continue?')) return;
+    el.driveRestoreBtn.disabled = true;
+    try {
+      const token = await ensureGoogleAccessToken();
+      const file = await driveFindBackupFile(token);
+      if (!file) { showToast('No backup found in Google Drive yet.'); return; }
+      const payload = await driveDownloadBackup(token, file.id);
+      await restoreFromBackupPayload(payload);
+      closeModal(el.settingsModalOverlay);
+      showToast('Restored from Google Drive');
+    } catch (e) {
+      showToast(e.message || 'Restore failed.');
+    } finally {
+      el.driveRestoreBtn.disabled = false;
+    }
+  });
+
+  el.googleSignOutBtn.addEventListener('click', async () => {
+    if (googleAccessToken && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+      google.accounts.oauth2.revoke(googleAccessToken, () => {});
+    }
+    googleAccessToken = null;
+    googleAccessTokenExpiresAt = 0;
+    await DB.setMeta('googleConnected', false);
+    await updateGoogleUI();
+    showToast('Disconnected from Google');
+  });
+
   // ---------- init ----------
   async function loadTripsAndActive() {
     const trips = await DB.getAllTrips();
@@ -1271,6 +1471,7 @@
     state.allTravelInfo = await DB.getAllTravelInfo();
 
     renderAll();
+    initGoogleAuth();
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('service-worker.js').catch(() => {});

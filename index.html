@@ -10,7 +10,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -236,6 +237,22 @@
       </label>
 
       <div class="settings-section">
+        <span class="field-label section-label">Backup</span>
+        <p class="field-help">Saves a copy of your trips, expenses, checklist, and travel info to a file in your own Google Drive — never through any server of mine, and your API key is never included.</p>
+        <div id="googleSignedOutView">
+          <button type="button" class="secondary-btn" id="googleSignInBtn" style="width:100%;">🔒 Sign in with Google</button>
+        </div>
+        <div id="googleSignedInView" style="display:none;">
+          <p class="field-help" id="googleBackupStatus"></p>
+          <div class="photo-row">
+            <button type="button" class="secondary-btn" id="driveBackupBtn">☁️ Back Up Now</button>
+            <button type="button" class="secondary-btn" id="driveRestoreBtn">⬇️ Restore</button>
+          </div>
+          <button type="button" class="secondary-btn danger-text" id="googleSignOutBtn" style="width:100%;margin-top:8px;">Disconnect Google</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <button type="button" class="secondary-btn" id="startNewTripBtn">💾 Save &amp; Bank Trip</button>
         <div id="newTripForm" class="new-trip-form" style="display:none;">
           <p class="field-help" id="bankSummaryText"></p>
@@ -401,9 +418,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=15"></script>
-<script src="claude.js?v=15"></script>
-<script src="datepicker.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="db.js?v=16"></script>
+<script src="claude.js?v=16"></script>
+<script src="datepicker.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

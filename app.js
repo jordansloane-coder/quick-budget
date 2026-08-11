@@ -56,6 +56,7 @@
 
     reportModalOverlay: $('reportModalOverlay'), reportBody: $('reportBody'), printReportBtn: $('printReportBtn'),
     exportReportCsvBtn: $('exportReportCsvBtn'),
+    scanModalTitle: $('scanModalTitle'), scanChooseHint: $('scanChooseHint'), scanLoadingHint: $('scanLoadingHint'),
 
     travelInfoBtn: $('travelInfoBtn'), travelInfoOverlay: $('travelInfoOverlay'), travelInfoTitle: $('travelInfoTitle'),
     travelInfoListView: $('travelInfoListView'), addTravelInfoBtn: $('addTravelInfoBtn'),
@@ -64,6 +65,7 @@
     travelPhotoPreviewWrap: $('travelPhotoPreviewWrap'), travelPhotoPreviewImg: $('travelPhotoPreviewImg'),
     travelAttachPhotoBtn: $('travelAttachPhotoBtn'), travelRemovePhotoBtn: $('travelRemovePhotoBtn'),
     travelPhotoFileInput: $('travelPhotoFileInput'), travelTypeChipRow: $('travelTypeChipRow'),
+    travelCustomTypeInput: $('travelCustomTypeInput'), travelReadFromPhotoBtn: $('travelReadFromPhotoBtn'),
     travelNameLabel: $('travelNameLabel'), travelNameInput: $('travelNameInput'),
     travelConfirmationInput: $('travelConfirmationInput'),
     travelAddressLabel: $('travelAddressLabel'), travelAddressInput: $('travelAddressInput'),
@@ -320,10 +322,12 @@
   async function addChecklistItem() {
     const text = el.checklistInput.value.trim();
     if (!text) return;
+    // Clear before the write resolves — a fast double-tap on Add would otherwise
+    // read the same not-yet-cleared text twice and create a duplicate item.
+    el.checklistInput.value = '';
     const item = { id: uid(), tripId: state.trip.id, text, checked: false, createdAt: Date.now(), checkedAt: null };
     await DB.putChecklistItem(item);
     state.allChecklist.unshift(item);
-    el.checklistInput.value = '';
     renderChecklist();
   }
 
@@ -427,37 +431,43 @@
   });
 
   el.saveExpenseBtn.addEventListener('click', async () => {
+    if (el.saveExpenseBtn.disabled) return; // guards against a fast double-tap creating a duplicate
     const amount = parseFloat(el.amountInput.value);
     if (!amount || amount <= 0) { showToast('Enter an amount greater than $0.'); el.amountInput.focus(); return; }
 
-    const existing = state.editingId ? state.allExpenses.find((e) => e.id === state.editingId) : null;
-    const isNew = !existing;
+    el.saveExpenseBtn.disabled = true;
+    try {
+      const existing = state.editingId ? state.allExpenses.find((e) => e.id === state.editingId) : null;
+      const isNew = !existing;
 
-    const expense = {
-      ...existing,
-      id: state.editingId || uid(),
-      tripId: state.trip.id,
-      amount,
-      vendor: el.vendorInput.value.trim() || 'Expense',
-      category: el.categoryInput.value.trim() || 'Other',
-      date: el.dateInput.value || todayISO(),
-      photo: state.pendingPhoto || null,
-      address: state.pendingAddress || null,
-      excludeFromBudget: el.excludeFromBudgetInput.checked,
-      createdAt: existing ? existing.createdAt : Date.now(),
-    };
+      const expense = {
+        ...existing,
+        id: state.editingId || uid(),
+        tripId: state.trip.id,
+        amount,
+        vendor: el.vendorInput.value.trim() || 'Expense',
+        category: el.categoryInput.value.trim() || 'Other',
+        date: el.dateInput.value || todayISO(),
+        photo: state.pendingPhoto || null,
+        address: state.pendingAddress || null,
+        excludeFromBudget: el.excludeFromBudgetInput.checked,
+        createdAt: existing ? existing.createdAt : Date.now(),
+      };
 
-    await DB.putExpense(expense);
-    const idx = state.allExpenses.findIndex((e) => e.id === expense.id);
-    if (idx >= 0) state.allExpenses[idx] = expense; else state.allExpenses.unshift(expense);
+      await DB.putExpense(expense);
+      const idx = state.allExpenses.findIndex((e) => e.id === expense.id);
+      if (idx >= 0) state.allExpenses[idx] = expense; else state.allExpenses.unshift(expense);
 
-    closeModal(el.expenseModalOverlay);
-    renderAll();
-    showToast(state.editingId ? 'Expense updated' : `Logged ${fmtMoney(amount)}`);
+      closeModal(el.expenseModalOverlay);
+      renderAll();
+      showToast(state.editingId ? 'Expense updated' : `Logged ${fmtMoney(amount)}`);
 
-    // Prefer the address printed on a scanned receipt — it's the actual vendor location,
-    // more accurate than GPS. Only fall back to device location when scanning didn't give us one.
-    if (isNew && !expense.address) captureLocationForExpense(expense.id);
+      // Prefer the address printed on a scanned receipt — it's the actual vendor location,
+      // more accurate than GPS. Only fall back to device location when scanning didn't give us one.
+      if (isNew && !expense.address) captureLocationForExpense(expense.id);
+    } finally {
+      el.saveExpenseBtn.disabled = false;
+    }
   });
 
   el.deleteExpenseBtn.addEventListener('click', async () => {
@@ -506,9 +516,12 @@
     await DB.putExpense(expense);
   }
 
-  // ---------- scan receipt flow ----------
+  // ---------- scan flow (shared by receipt scanning and travel document reading) ----------
+  // scanMode: 'expense' reads a receipt into the expense form. 'travel' reads a travel
+  // document (hotel/flight/car/etc.) into the travel info form.
   // scanFillTarget: 'new' opens a fresh Add Expense modal prefilled with the result.
-  // 'inline' fills the fields of the Add/Edit Expense modal that's already open (Read from Photo).
+  // 'inline' fills the fields of the modal that's already open (Read from Photo).
+  let scanMode = 'expense';
   let scanFillTarget = 'new';
 
   function resetScanModal() {
@@ -516,6 +529,15 @@
     el.scanLoadingStep.style.display = 'none';
     el.scanErrorStep.style.display = 'none';
     el.scanNoKeyNote.style.display = state.settings.apiKey ? 'none' : '';
+    if (scanMode === 'travel') {
+      el.scanModalTitle.textContent = 'Read Travel Document';
+      el.scanChooseHint.textContent = 'Take a photo of a hotel confirmation, boarding pass, rental agreement, or any other travel document. Claude will try to read the details for you.';
+      el.scanLoadingHint.textContent = 'Reading document…';
+    } else {
+      el.scanModalTitle.textContent = 'Scan Receipt';
+      el.scanChooseHint.textContent = 'Take a photo of your receipt, or choose one from your library. Claude will try to read the vendor, total, date and category for you.';
+      el.scanLoadingHint.textContent = 'Reading receipt…';
+    }
   }
 
   function applyPhotoToOpenExpenseModal(photoDataUrl) {
@@ -535,8 +557,45 @@
     renderCategoryChips(el.categoryInput.value);
   }
 
-  el.scanBtn.addEventListener('click', () => { scanFillTarget = 'new'; resetScanModal(); openModal(el.scanModalOverlay); });
-  el.aiReadBtn.addEventListener('click', () => { scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
+  function applyPhotoToTravelForm(photoDataUrl) {
+    travelPendingPhoto = photoDataUrl;
+    el.travelPhotoPreviewImg.src = photoDataUrl;
+    el.travelPhotoPreviewWrap.style.display = '';
+    el.travelRemovePhotoBtn.style.display = '';
+  }
+
+  // Claude returns a free-text type guess (e.g. "Train", "Insurance") rather than a fixed
+  // enum, since travel info covers more than hotel/flight/car — map it onto one of our
+  // preset chips when it clearly matches, otherwise fall back to "Other" + a custom label.
+  function mapGuessedTravelType(guess) {
+    const g = guess.toLowerCase();
+    if (g.includes('hotel') || g.includes('lodging') || g.includes('motel') || g.includes('resort')) return { type: 'hotel', customType: '' };
+    if (g.includes('flight') || g.includes('air')) return { type: 'flight', customType: '' };
+    if (g.includes('car') || g.includes('rental')) return { type: 'car', customType: '' };
+    return { type: 'other', customType: guess };
+  }
+
+  function applyParsedToTravelForm(parsed, photoDataUrl) {
+    applyPhotoToTravelForm(photoDataUrl);
+    if (parsed.name) el.travelNameInput.value = parsed.name;
+    if (parsed.confirmationNumber) el.travelConfirmationInput.value = parsed.confirmationNumber;
+    if (parsed.address) el.travelAddressInput.value = parsed.address;
+    if (parsed.startAt) el.travelStartInput.value = parsed.startAt;
+    if (parsed.endAt) el.travelEndInput.value = parsed.endAt;
+    if (parsed.notes) el.travelNotesInput.value = parsed.notes;
+    if (parsed.type) {
+      const mapped = mapGuessedTravelType(parsed.type);
+      travelPendingType = mapped.type;
+      renderTravelTypeChips(travelPendingType);
+      applyTravelTypeLabels(travelPendingType);
+      el.travelCustomTypeInput.style.display = travelPendingType === 'other' ? '' : 'none';
+      el.travelCustomTypeInput.value = mapped.customType;
+    }
+  }
+
+  el.scanBtn.addEventListener('click', () => { scanMode = 'expense'; scanFillTarget = 'new'; resetScanModal(); openModal(el.scanModalOverlay); });
+  el.aiReadBtn.addEventListener('click', () => { scanMode = 'expense'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
+  el.travelReadFromPhotoBtn.addEventListener('click', () => { scanMode = 'travel'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
   el.scanCameraBtn.addEventListener('click', () => el.scanCameraInput.click());
   el.scanLibraryBtn.addEventListener('click', () => el.scanLibraryInput.click());
   el.scanNoKeySettingsLink.addEventListener('click', () => {
@@ -553,7 +612,10 @@
 
       if (!state.settings.apiKey) {
         closeModal(el.scanModalOverlay);
-        if (scanFillTarget === 'inline') {
+        if (scanMode === 'travel') {
+          applyPhotoToTravelForm(small);
+          showToast('Photo attached — add an API key in Settings to auto-fill details.');
+        } else if (scanFillTarget === 'inline') {
           applyPhotoToOpenExpenseModal(small);
           showToast('Photo attached — add an API key in Settings to auto-fill details.');
         } else {
@@ -566,6 +628,15 @@
       el.scanErrorStep.style.display = 'none';
       el.scanLoadingStep.style.display = '';
       el.scanLoadingImg.src = small;
+
+      if (scanMode === 'travel') {
+        const parsed = await ClaudeReceipts.parseTravelDocument(small, state.settings.apiKey, todayISO());
+        closeModal(el.scanModalOverlay);
+        applyParsedToTravelForm(parsed, small);
+        const missing = ['name', 'confirmationNumber', 'startAt'].filter((k) => parsed[k] == null);
+        showToast(missing.length ? 'Got most of it — check the highlighted fields.' : 'Document read. Review and save.');
+        return;
+      }
 
       const parsed = await ClaudeReceipts.parseReceipt(small, state.settings.apiKey);
       closeModal(el.scanModalOverlay);
@@ -588,7 +659,7 @@
       el.scanChooseStep.style.display = 'none';
       el.scanLoadingStep.style.display = 'none';
       el.scanErrorStep.style.display = '';
-      el.scanErrorText.textContent = e.message || 'Something went wrong reading that receipt.';
+      el.scanErrorText.textContent = e.message || 'Something went wrong reading that document.';
     }
   }
 
@@ -597,7 +668,9 @@
 
   el.scanErrorManualBtn.addEventListener('click', () => {
     closeModal(el.scanModalOverlay);
-    if (scanFillTarget === 'inline') {
+    if (scanMode === 'travel') {
+      if (scanPendingPhoto) applyPhotoToTravelForm(scanPendingPhoto);
+    } else if (scanFillTarget === 'inline') {
       if (scanPendingPhoto) applyPhotoToOpenExpenseModal(scanPendingPhoto);
     } else {
       openExpenseModal(null, scanPendingPhoto ? { photo: scanPendingPhoto } : null);
@@ -1000,6 +1073,8 @@
         travelPendingType = type;
         renderTravelTypeChips(type);
         applyTravelTypeLabels(type);
+        el.travelCustomTypeInput.style.display = type === 'other' ? '' : 'none';
+        if (type !== 'other') el.travelCustomTypeInput.value = '';
       });
       el.travelTypeChipRow.appendChild(chip);
     }
@@ -1020,21 +1095,22 @@
 
     for (const item of items) {
       const meta = TRAVEL_TYPE_META[item.type] || TRAVEL_TYPE_META.other;
+      const typeLabel = item.customType || meta.label;
       const li = document.createElement('li');
       li.className = 'travel-info-item';
 
       const thumbHtml = item.photo
-        ? `<img class="travel-info-thumb" src="${item.photo}" alt="${meta.label}">`
+        ? `<img class="travel-info-thumb" src="${item.photo}" alt="${typeLabel}">`
         : `<div class="travel-info-thumb-fallback">${meta.emoji}</div>`;
 
-      const metaParts = [meta.label];
+      const metaParts = [typeLabel];
       if (item.confirmationNumber) metaParts.push(`#${item.confirmationNumber}`);
       if (item.startAt) metaParts.push(fmtDateTimeLocal(item.startAt));
 
       li.innerHTML = `
         ${thumbHtml}
         <div class="travel-info-main">
-          <div class="travel-info-name">${escapeHtml(item.name || meta.label)}</div>
+          <div class="travel-info-name">${escapeHtml(item.name || typeLabel)}</div>
           <div class="travel-info-meta">${escapeHtml(metaParts.join(' · '))}</div>
         </div>
       `;
@@ -1064,6 +1140,8 @@
 
     renderTravelTypeChips(travelPendingType);
     applyTravelTypeLabels(travelPendingType);
+    el.travelCustomTypeInput.style.display = travelPendingType === 'other' ? '' : 'none';
+    el.travelCustomTypeInput.value = existing ? (existing.customType || '') : '';
     el.travelNameInput.value = existing ? (existing.name || '') : '';
     el.travelConfirmationInput.value = existing ? (existing.confirmationNumber || '') : '';
     el.travelAddressInput.value = existing ? (existing.address || '') : '';
@@ -1109,30 +1187,37 @@
   });
 
   el.saveTravelInfoBtn.addEventListener('click', async () => {
+    if (el.saveTravelInfoBtn.disabled) return; // guards against a fast double-tap creating a duplicate
     const name = el.travelNameInput.value.trim();
     if (!name) { showToast('Give it a name.'); el.travelNameInput.focus(); return; }
 
-    const existing = travelEditingId ? state.allTravelInfo.find((i) => i.id === travelEditingId) : null;
-    const item = {
-      id: travelEditingId || uid(),
-      tripId: state.trip.id,
-      type: travelPendingType,
-      name,
-      confirmationNumber: el.travelConfirmationInput.value.trim(),
-      address: el.travelAddressInput.value.trim(),
-      startAt: el.travelStartInput.value || null,
-      endAt: el.travelEndInput.value || null,
-      notes: el.travelNotesInput.value.trim(),
-      photo: travelPendingPhoto || null,
-      createdAt: existing ? existing.createdAt : Date.now(),
-    };
+    el.saveTravelInfoBtn.disabled = true;
+    try {
+      const existing = travelEditingId ? state.allTravelInfo.find((i) => i.id === travelEditingId) : null;
+      const item = {
+        id: travelEditingId || uid(),
+        tripId: state.trip.id,
+        type: travelPendingType,
+        customType: travelPendingType === 'other' ? el.travelCustomTypeInput.value.trim() : '',
+        name,
+        confirmationNumber: el.travelConfirmationInput.value.trim(),
+        address: el.travelAddressInput.value.trim(),
+        startAt: el.travelStartInput.value || null,
+        endAt: el.travelEndInput.value || null,
+        notes: el.travelNotesInput.value.trim(),
+        photo: travelPendingPhoto || null,
+        createdAt: existing ? existing.createdAt : Date.now(),
+      };
 
-    await DB.putTravelInfo(item);
-    const idx = state.allTravelInfo.findIndex((i) => i.id === item.id);
-    if (idx >= 0) state.allTravelInfo[idx] = item; else state.allTravelInfo.push(item);
+      await DB.putTravelInfo(item);
+      const idx = state.allTravelInfo.findIndex((i) => i.id === item.id);
+      if (idx >= 0) state.allTravelInfo[idx] = item; else state.allTravelInfo.push(item);
 
-    showToast(travelEditingId ? 'Travel info updated' : 'Travel info saved');
-    openTravelInfoList();
+      showToast(travelEditingId ? 'Travel info updated' : 'Travel info saved');
+      openTravelInfoList();
+    } finally {
+      el.saveTravelInfoBtn.disabled = false;
+    }
   });
 
   el.deleteTravelInfoBtn.addEventListener('click', async () => {

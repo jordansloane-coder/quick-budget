@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -155,13 +155,13 @@
 <div class="modal-overlay" id="scanModalOverlay">
   <div class="modal" id="scanModal">
     <div class="modal-header">
-      <h3>Scan Receipt</h3>
+      <h3 id="scanModalTitle">Scan Receipt</h3>
       <button class="icon-btn" data-close="scanModalOverlay">✕</button>
     </div>
     <div class="modal-body" id="scanModalBody">
 
       <div id="scanChooseStep" class="scan-step">
-        <p class="scan-hint">Take a photo of your receipt, or choose one from your library. Claude will try to read the vendor, total, date and category for you.</p>
+        <p class="scan-hint" id="scanChooseHint">Take a photo of your receipt, or choose one from your library. Claude will try to read the vendor, total, date and category for you.</p>
         <div class="scan-choose-row">
           <button class="secondary-btn big" id="scanCameraBtn">📷 Camera</button>
           <button class="secondary-btn big" id="scanLibraryBtn">🖼️ Library</button>
@@ -176,7 +176,7 @@
           <img id="scanLoadingImg" class="receipt-preview-img" alt="Receipt">
         </div>
         <div class="spinner"></div>
-        <p class="scan-hint">Reading receipt…</p>
+        <p class="scan-hint" id="scanLoadingHint">Reading receipt…</p>
       </div>
 
       <div id="scanErrorStep" class="scan-step" style="display:none;">
@@ -343,6 +343,11 @@
         <div id="travelPhotoPreviewWrap" class="receipt-preview-wrap" style="display:none;">
           <img id="travelPhotoPreviewImg" class="receipt-preview-img" alt="Travel document">
         </div>
+
+        <button type="button" class="ai-read-btn" id="travelReadFromPhotoBtn">
+          <span class="fab-icon">🪄</span><span>Read from Photo — fills this form in for you</span>
+        </button>
+
         <div class="photo-row" style="margin-bottom:18px;">
           <button type="button" class="secondary-btn" id="travelAttachPhotoBtn">📎 Attach photo</button>
           <button type="button" class="secondary-btn danger-text" id="travelRemovePhotoBtn" style="display:none;">Remove</button>
@@ -352,6 +357,7 @@
         <div class="field">
           <span class="field-label">Type</span>
           <div class="category-chip-row" id="travelTypeChipRow"></div>
+          <input type="text" id="travelCustomTypeInput" placeholder="e.g. Train, Insurance, Parking, Tour" style="display:none;margin-top:8px;">
         </div>
 
         <label class="field">
@@ -395,9 +401,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=13"></script>
-<script src="claude.js?v=13"></script>
-<script src="datepicker.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="db.js?v=15"></script>
+<script src="claude.js?v=15"></script>
+<script src="datepicker.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

@@ -899,8 +899,40 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .report-item-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 
 @media print {
-  body * { visibility: hidden; }
-  .report-body, .report-body * { visibility: visible; }
-  .report-body { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+  #app,
+  #expenseModalOverlay,
+  #scanModalOverlay,
+  #settingsModalOverlay,
+  #datePickerOverlay,
+  .toast {
+    display: none !important;
+  }
   .no-print { display: none !important; }
+
+  html, body { background: #fff !important; height: auto !important; }
+
+  #reportModalOverlay {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    backdrop-filter: none !important;
+    inset: auto !important;
+  }
+  #reportModal {
+    max-width: none !important;
+    max-height: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    animation: none !important;
+    display: block !important;
+  }
+  .report-body {
+    overflow: visible !important;
+    max-height: none !important;
+    padding: 0 !important;
+  }
+  .report-item { break-inside: avoid; }
 }

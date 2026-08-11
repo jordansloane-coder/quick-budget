@@ -1,7 +1,7 @@
 // Caches the app shell so it opens and works offline (all data lives in IndexedDB on-device).
 // Receipt scanning still needs a live connection to reach the Claude API.
 
-const CACHE_NAME = 'quick-budget-v9';
+const CACHE_NAME = 'quick-budget-v10';
 const SHELL_FILES = [
   './',
   './index.html',

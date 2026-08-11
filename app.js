@@ -11,6 +11,7 @@
     trips: [],         // every trip ever created, active and banked
     allExpenses: [],    // every expense ever logged, across all trips (tagged by tripId)
     allChecklist: [],   // every checklist item ever added, across all trips (tagged by tripId)
+    allTravelInfo: [],  // every travel info entry ever added, across all trips (tagged by tripId)
     editingId: null,
     pendingPhoto: null,   // dataURL currently attached in the expense modal
     pendingAddress: null, // address text currently attached in the expense modal (from a scanned receipt)
@@ -33,6 +34,7 @@
     categoryInput: $('categoryInput'), categoryChipRow: $('categoryChipRow'), categoryDatalist: $('categoryDatalist'),
     receiptPreviewWrap: $('receiptPreviewWrap'), receiptPreviewImg: $('receiptPreviewImg'),
     attachPhotoBtn: $('attachPhotoBtn'), removePhotoBtn: $('removePhotoBtn'), photoFileInput: $('photoFileInput'),
+    excludeFromBudgetInput: $('excludeFromBudgetInput'),
     saveExpenseBtn: $('saveExpenseBtn'), deleteExpenseBtn: $('deleteExpenseBtn'), aiReadBtn: $('aiReadBtn'),
 
     scanModalOverlay: $('scanModalOverlay'),
@@ -45,21 +47,51 @@
     settingsModalOverlay: $('settingsModalOverlay'), tripNameInput: $('tripNameInput'),
     budgetInput: $('budgetInput'), apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
     resetAllBtn: $('resetAllBtn'), loadSampleBtn: $('loadSampleBtn'), tripDatesBtn: $('tripDatesBtn'),
+    countModeDownBtn: $('countModeDownBtn'), countModeUpBtn: $('countModeUpBtn'),
     startNewTripBtn: $('startNewTripBtn'), newTripForm: $('newTripForm'), bankSummaryText: $('bankSummaryText'),
     newTripNameInput: $('newTripNameInput'), newTripBudgetInput: $('newTripBudgetInput'), newTripDatesBtn: $('newTripDatesBtn'),
+    newCountModeDownBtn: $('newCountModeDownBtn'), newCountModeUpBtn: $('newCountModeUpBtn'),
     cancelNewTripBtn: $('cancelNewTripBtn'), confirmNewTripBtn: $('confirmNewTripBtn'),
     pastTripsSection: $('pastTripsSection'), pastTripsList: $('pastTripsList'),
 
     reportModalOverlay: $('reportModalOverlay'), reportBody: $('reportBody'), printReportBtn: $('printReportBtn'),
     exportReportCsvBtn: $('exportReportCsvBtn'),
 
+    travelInfoBtn: $('travelInfoBtn'), travelInfoOverlay: $('travelInfoOverlay'), travelInfoTitle: $('travelInfoTitle'),
+    travelInfoListView: $('travelInfoListView'), addTravelInfoBtn: $('addTravelInfoBtn'),
+    travelInfoList: $('travelInfoList'), travelInfoEmpty: $('travelInfoEmpty'),
+    travelInfoFormView: $('travelInfoFormView'), travelInfoFormFooter: $('travelInfoFormFooter'),
+    travelPhotoPreviewWrap: $('travelPhotoPreviewWrap'), travelPhotoPreviewImg: $('travelPhotoPreviewImg'),
+    travelAttachPhotoBtn: $('travelAttachPhotoBtn'), travelRemovePhotoBtn: $('travelRemovePhotoBtn'),
+    travelPhotoFileInput: $('travelPhotoFileInput'), travelTypeChipRow: $('travelTypeChipRow'),
+    travelNameLabel: $('travelNameLabel'), travelNameInput: $('travelNameInput'),
+    travelConfirmationInput: $('travelConfirmationInput'),
+    travelAddressLabel: $('travelAddressLabel'), travelAddressInput: $('travelAddressInput'),
+    travelStartLabel: $('travelStartLabel'), travelStartInput: $('travelStartInput'),
+    travelEndLabel: $('travelEndLabel'), travelEndInput: $('travelEndInput'),
+    travelNotesInput: $('travelNotesInput'),
+    deleteTravelInfoBtn: $('deleteTravelInfoBtn'), backTravelInfoBtn: $('backTravelInfoBtn'),
+    saveTravelInfoBtn: $('saveTravelInfoBtn'),
+
     toast: $('toast'),
   };
 
   let scanPendingPhoto = null; // dataURL being scanned
   let currentReportContext = null; // { trip, expenses } for whatever the report modal is currently showing
+  let travelEditingId = null;    // id of the travel info entry being edited, null = new
+  let travelPendingPhoto = null; // dataURL currently attached in the travel info form
+  let travelPendingType = 'hotel';
+
+  const TRAVEL_TYPE_META = {
+    hotel: { emoji: '🏨', label: 'Hotel', nameLabel: 'Hotel Name', addressLabel: 'Address', startLabel: 'Check-in', endLabel: 'Check-out' },
+    flight: { emoji: '✈️', label: 'Flight', nameLabel: 'Airline', addressLabel: 'Airport / Location', startLabel: 'Departure', endLabel: 'Arrival' },
+    car: { emoji: '🚗', label: 'Car Rental', nameLabel: 'Rental Company', addressLabel: 'Pick-up Location', startLabel: 'Pick-up Time', endLabel: 'Drop-off Time' },
+    other: { emoji: '📌', label: 'Other', nameLabel: 'Name', addressLabel: 'Address / Location', startLabel: 'Start', endLabel: 'End' },
+  };
   let pendingTripDates = { start: null, end: null };    // being edited for the active trip, in Settings
   let pendingNewTripDates = { start: null, end: null }; // being set for the trip about to be started
+  let pendingCountMode = 'countdown';    // being edited for the active trip, in Settings
+  let pendingNewCountMode = 'countdown'; // being set for the trip about to be started
 
   // ---------- utils ----------
   const fmtMoney = (n) => `$${(Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -161,8 +193,14 @@
     return state.allChecklist.filter((i) => i.tripId === state.trip.id);
   }
 
+  function activeTravelInfo() {
+    return state.allTravelInfo
+      .filter((i) => i.tripId === state.trip.id)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
   function totalSpent(expenses = activeExpenses()) {
-    return expenses.reduce((sum, e) => sum + e.amount, 0);
+    return expenses.filter((e) => !e.excludeFromBudget).reduce((sum, e) => sum + e.amount, 0);
   }
 
   function allCategories() {
@@ -184,8 +222,13 @@
     el.tripCountdown.textContent = countdownText;
     el.countdownWrap.style.display = countdownText ? '' : 'none';
 
-    el.bigNumber.textContent = remaining < 0 ? `-${fmtMoneyShort(Math.abs(remaining))}` : fmtMoneyShort(remaining);
-    el.bigSub.textContent = remaining < 0 ? 'over budget' : 'left to spend';
+    if (state.trip.countMode === 'countup') {
+      el.bigNumber.textContent = fmtMoneyShort(spent);
+      el.bigSub.textContent = remaining < 0 ? 'spent so far — over budget' : 'spent so far';
+    } else {
+      el.bigNumber.textContent = remaining < 0 ? `-${fmtMoneyShort(Math.abs(remaining))}` : fmtMoneyShort(remaining);
+      el.bigSub.textContent = remaining < 0 ? 'over budget' : 'left to spend';
+    }
 
     el.bigNumber.classList.remove('good', 'warn', 'bad');
     el.progressFill.classList.remove('warn', 'bad');
@@ -228,6 +271,7 @@
           <div class="expense-meta">
             <span class="category-tag">${escapeHtml(expense.category || 'Other')}</span>
             <span>${dateStr}</span>
+            ${expense.excludeFromBudget ? '<span class="excluded-tag">Not counted</span>' : ''}
           </div>
         </div>
         <div class="expense-amount">${fmtMoney(expense.amount)}</div>
@@ -343,6 +387,7 @@
     el.dateInput.value = source.date || todayISO();
     el.categoryInput.value = source.category || '';
     renderCategoryChips(source.category || '');
+    el.excludeFromBudgetInput.checked = !!source.excludeFromBudget;
 
     if (state.pendingPhoto) {
       el.receiptPreviewImg.src = state.pendingPhoto;
@@ -398,6 +443,7 @@
       date: el.dateInput.value || todayISO(),
       photo: state.pendingPhoto || null,
       address: state.pendingAddress || null,
+      excludeFromBudget: el.excludeFromBudgetInput.checked,
       createdAt: existing ? existing.createdAt : Date.now(),
     };
 
@@ -606,9 +652,11 @@
         if (!confirm(`Delete "${trip.name}" and its ${tripExpenses.length} expense${tripExpenses.length === 1 ? '' : 's'} permanently? This cannot be undone.`)) return;
         for (const e of tripExpenses) await DB.deleteExpense(e.id);
         for (const i of state.allChecklist.filter((c) => c.tripId === trip.id)) await DB.deleteChecklistItem(i.id);
+        for (const i of state.allTravelInfo.filter((t) => t.tripId === trip.id)) await DB.deleteTravelInfo(i.id);
         await DB.deleteTrip(trip.id);
         state.allExpenses = state.allExpenses.filter((e) => e.tripId !== trip.id);
         state.allChecklist = state.allChecklist.filter((i) => i.tripId !== trip.id);
+        state.allTravelInfo = state.allTravelInfo.filter((i) => i.tripId !== trip.id);
         state.trips = state.trips.filter((t) => t.id !== trip.id);
         renderPastTrips();
         showToast(`Deleted "${trip.name}"`);
@@ -619,6 +667,11 @@
     }
   }
 
+  function renderCountModeToggle(downBtn, upBtn, mode) {
+    downBtn.classList.toggle('selected', mode !== 'countup');
+    upBtn.classList.toggle('selected', mode === 'countup');
+  }
+
   function openSettingsModal() {
     el.tripNameInput.value = state.trip.name || '';
     el.budgetInput.value = state.trip.budget != null ? state.trip.budget : '';
@@ -626,11 +679,30 @@
     el.newTripForm.style.display = 'none';
     pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
     el.tripDatesBtn.textContent = dateRangeLabel(pendingTripDates.start, pendingTripDates.end);
+    pendingCountMode = state.trip.countMode === 'countup' ? 'countup' : 'countdown';
+    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode);
     renderPastTrips();
     openModal(el.settingsModalOverlay);
   }
   el.settingsBtn.addEventListener('click', openSettingsModal);
   el.menuBtn.addEventListener('click', () => openReportModal());
+
+  el.countModeDownBtn.addEventListener('click', () => {
+    pendingCountMode = 'countdown';
+    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode);
+  });
+  el.countModeUpBtn.addEventListener('click', () => {
+    pendingCountMode = 'countup';
+    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode);
+  });
+  el.newCountModeDownBtn.addEventListener('click', () => {
+    pendingNewCountMode = 'countdown';
+    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode);
+  });
+  el.newCountModeUpBtn.addEventListener('click', () => {
+    pendingNewCountMode = 'countup';
+    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode);
+  });
 
   el.tripDatesBtn.addEventListener('click', () => {
     DatePicker.open({
@@ -662,6 +734,7 @@
       budget: isNaN(budget) ? DEFAULT_BUDGET : budget,
       startDate: pendingTripDates.start,
       endDate: pendingTripDates.end,
+      countMode: pendingCountMode,
     };
     state.settings.apiKey = el.apiKeyInput.value.trim();
 
@@ -765,6 +838,8 @@
       el.newTripBudgetInput.value = state.trip.budget || '';
       pendingNewTripDates = { start: null, end: null };
       el.newTripDatesBtn.textContent = dateRangeLabel(null, null);
+      pendingNewCountMode = 'countdown';
+      renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode);
       el.bankSummaryText.textContent = `Saves your edits above, banks "${state.trip.name}" (${fmtMoney(totalSpent())} of ${fmtMoney(state.trip.budget)}) into Past Trips, then starts a fresh trip with what you enter below.`;
       setTimeout(() => el.newTripNameInput.focus(), 150);
     }
@@ -789,6 +864,7 @@
       budget: isNaN(currentBudget) ? state.trip.budget : currentBudget,
       startDate: pendingTripDates.start,
       endDate: pendingTripDates.end,
+      countMode: pendingCountMode,
       archivedAt: Date.now(),
     };
     await DB.putTrip(archivedTrip);
@@ -799,6 +875,7 @@
       budget: finalBudget,
       startDate: pendingNewTripDates.start,
       endDate: pendingNewTripDates.end,
+      countMode: pendingNewCountMode,
       createdAt: Date.now(),
       archivedAt: null,
     };
@@ -832,16 +909,16 @@
 
   function exportCsv(trip = state.trip, expenses = activeExpenses()) {
     if (expenses.length === 0) { showToast('No expenses to export yet.'); return; }
-    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Location', 'Has Photo']];
+    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Location', 'Has Photo']];
     const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     for (const e of sorted) {
-      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), locationLabel(e), e.photo ? 'Yes' : 'No']);
+      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', locationLabel(e), e.photo ? 'Yes' : 'No']);
     }
     const spent = totalSpent(expenses);
     rows.push([]);
-    rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '']);
-    rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '']);
-    rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '']);
+    rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '']);
+    rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '']);
+    rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '']);
 
     const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
     const filename = `${(trip.name || 'trip-budget').replace(/[^a-z0-9]+/gi, '-')}-expenses.csv`;
@@ -876,7 +953,7 @@
           <div class="report-item-row">
             <div>
               <div class="report-item-vendor">${escapeHtml(e.vendor || 'Expense')}</div>
-              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</div>
+              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${e.excludeFromBudget ? ' · not counted toward budget' : ''}</div>
             </div>
             <div class="report-item-amount">${fmtMoney(e.amount)}</div>
           </div>
@@ -904,6 +981,168 @@
     openReportModal();
   });
   el.printReportBtn.addEventListener('click', () => window.print());
+
+  // ---------- travel info ----------
+  function fmtDateTimeLocal(val) {
+    if (!val) return '';
+    return new Date(val).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  function renderTravelTypeChips(selected) {
+    el.travelTypeChipRow.innerHTML = '';
+    for (const type of Object.keys(TRAVEL_TYPE_META)) {
+      const meta = TRAVEL_TYPE_META[type];
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'category-chip' + (type === selected ? ' selected' : '');
+      chip.textContent = `${meta.emoji} ${meta.label}`;
+      chip.addEventListener('click', () => {
+        travelPendingType = type;
+        renderTravelTypeChips(type);
+        applyTravelTypeLabels(type);
+      });
+      el.travelTypeChipRow.appendChild(chip);
+    }
+  }
+
+  function applyTravelTypeLabels(type) {
+    const meta = TRAVEL_TYPE_META[type] || TRAVEL_TYPE_META.other;
+    el.travelNameLabel.textContent = meta.nameLabel;
+    el.travelAddressLabel.textContent = meta.addressLabel;
+    el.travelStartLabel.textContent = meta.startLabel;
+    el.travelEndLabel.textContent = meta.endLabel;
+  }
+
+  function renderTravelInfoList() {
+    const items = activeTravelInfo();
+    el.travelInfoList.innerHTML = '';
+    el.travelInfoEmpty.style.display = items.length ? 'none' : '';
+
+    for (const item of items) {
+      const meta = TRAVEL_TYPE_META[item.type] || TRAVEL_TYPE_META.other;
+      const li = document.createElement('li');
+      li.className = 'travel-info-item';
+
+      const thumbHtml = item.photo
+        ? `<img class="travel-info-thumb" src="${item.photo}" alt="${meta.label}">`
+        : `<div class="travel-info-thumb-fallback">${meta.emoji}</div>`;
+
+      const metaParts = [meta.label];
+      if (item.confirmationNumber) metaParts.push(`#${item.confirmationNumber}`);
+      if (item.startAt) metaParts.push(fmtDateTimeLocal(item.startAt));
+
+      li.innerHTML = `
+        ${thumbHtml}
+        <div class="travel-info-main">
+          <div class="travel-info-name">${escapeHtml(item.name || meta.label)}</div>
+          <div class="travel-info-meta">${escapeHtml(metaParts.join(' · '))}</div>
+        </div>
+      `;
+      li.querySelector('.travel-info-main').addEventListener('click', () => openTravelInfoForm(item));
+      el.travelInfoList.appendChild(li);
+    }
+  }
+
+  function openTravelInfoList() {
+    el.travelInfoTitle.textContent = 'Travel Info';
+    el.travelInfoListView.style.display = '';
+    el.travelInfoFormView.style.display = 'none';
+    el.travelInfoFormFooter.style.display = 'none';
+    renderTravelInfoList();
+    openModal(el.travelInfoOverlay);
+  }
+  el.travelInfoBtn.addEventListener('click', openTravelInfoList);
+  el.backTravelInfoBtn.addEventListener('click', openTravelInfoList);
+
+  function openTravelInfoForm(existing = null) {
+    travelEditingId = existing ? existing.id : null;
+    travelPendingPhoto = existing ? (existing.photo || null) : null;
+    travelPendingType = existing ? (existing.type || 'hotel') : 'hotel';
+
+    el.travelInfoTitle.textContent = existing ? 'Edit Travel Info' : 'Add Travel Info';
+    el.deleteTravelInfoBtn.style.display = existing ? '' : 'none';
+
+    renderTravelTypeChips(travelPendingType);
+    applyTravelTypeLabels(travelPendingType);
+    el.travelNameInput.value = existing ? (existing.name || '') : '';
+    el.travelConfirmationInput.value = existing ? (existing.confirmationNumber || '') : '';
+    el.travelAddressInput.value = existing ? (existing.address || '') : '';
+    el.travelStartInput.value = existing ? (existing.startAt || '') : '';
+    el.travelEndInput.value = existing ? (existing.endAt || '') : '';
+    el.travelNotesInput.value = existing ? (existing.notes || '') : '';
+
+    if (travelPendingPhoto) {
+      el.travelPhotoPreviewImg.src = travelPendingPhoto;
+      el.travelPhotoPreviewWrap.style.display = '';
+      el.travelRemovePhotoBtn.style.display = '';
+    } else {
+      el.travelPhotoPreviewWrap.style.display = 'none';
+      el.travelRemovePhotoBtn.style.display = 'none';
+    }
+
+    el.travelInfoListView.style.display = 'none';
+    el.travelInfoFormView.style.display = '';
+    el.travelInfoFormFooter.style.display = '';
+  }
+  el.addTravelInfoBtn.addEventListener('click', () => openTravelInfoForm());
+
+  el.travelAttachPhotoBtn.addEventListener('click', () => el.travelPhotoFileInput.click());
+  el.travelPhotoFileInput.addEventListener('change', async () => {
+    const file = el.travelPhotoFileInput.files[0];
+    el.travelPhotoFileInput.value = '';
+    if (!file) return;
+    try {
+      const raw = await fileToDataUrl(file);
+      const small = await downscaleImage(raw);
+      travelPendingPhoto = small;
+      el.travelPhotoPreviewImg.src = small;
+      el.travelPhotoPreviewWrap.style.display = '';
+      el.travelRemovePhotoBtn.style.display = '';
+    } catch (e) {
+      showToast(e.message || 'Could not attach that photo.');
+    }
+  });
+  el.travelRemovePhotoBtn.addEventListener('click', () => {
+    travelPendingPhoto = null;
+    el.travelPhotoPreviewWrap.style.display = 'none';
+    el.travelRemovePhotoBtn.style.display = 'none';
+  });
+
+  el.saveTravelInfoBtn.addEventListener('click', async () => {
+    const name = el.travelNameInput.value.trim();
+    if (!name) { showToast('Give it a name.'); el.travelNameInput.focus(); return; }
+
+    const existing = travelEditingId ? state.allTravelInfo.find((i) => i.id === travelEditingId) : null;
+    const item = {
+      id: travelEditingId || uid(),
+      tripId: state.trip.id,
+      type: travelPendingType,
+      name,
+      confirmationNumber: el.travelConfirmationInput.value.trim(),
+      address: el.travelAddressInput.value.trim(),
+      startAt: el.travelStartInput.value || null,
+      endAt: el.travelEndInput.value || null,
+      notes: el.travelNotesInput.value.trim(),
+      photo: travelPendingPhoto || null,
+      createdAt: existing ? existing.createdAt : Date.now(),
+    };
+
+    await DB.putTravelInfo(item);
+    const idx = state.allTravelInfo.findIndex((i) => i.id === item.id);
+    if (idx >= 0) state.allTravelInfo[idx] = item; else state.allTravelInfo.push(item);
+
+    showToast(travelEditingId ? 'Travel info updated' : 'Travel info saved');
+    openTravelInfoList();
+  });
+
+  el.deleteTravelInfoBtn.addEventListener('click', async () => {
+    if (!travelEditingId) return;
+    if (!confirm('Delete this travel info?')) return;
+    await DB.deleteTravelInfo(travelEditingId);
+    state.allTravelInfo = state.allTravelInfo.filter((i) => i.id !== travelEditingId);
+    showToast('Travel info deleted');
+    openTravelInfoList();
+  });
 
   // ---------- init ----------
   async function loadTripsAndActive() {
@@ -944,6 +1183,7 @@
     state.trip = activeTrip;
     state.allExpenses = await DB.getAllExpenses();
     state.allChecklist = await DB.getAllChecklistItems();
+    state.allTravelInfo = await DB.getAllTravelInfo();
 
     renderAll();
 

@@ -1,11 +1,12 @@
 // Minimal IndexedDB wrapper — no dependencies.
-// Four stores: "expenses" (line items, tagged with a tripId), "trips" (one record
+// Five stores: "expenses" (line items, tagged with a tripId), "trips" (one record
 // per trip — active or banked/archived), "checklist" (simple to-do items, also
+// tagged with a tripId), "travelInfo" (hotel/flight/car booking details, also
 // tagged with a tripId), and "meta" (device-wide settings, key/value).
 
 const DB = (() => {
   const DB_NAME = 'quick-budget';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   let dbPromise = null;
 
   function open() {
@@ -26,6 +27,9 @@ const DB = (() => {
         }
         if (!db.objectStoreNames.contains('checklist')) {
           db.createObjectStore('checklist', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('travelInfo')) {
+          db.createObjectStore('travelInfo', { keyPath: 'id' });
         }
       };
       req.onsuccess = () => {
@@ -133,6 +137,33 @@ const DB = (() => {
 
     async deleteChecklistItem(id) {
       const store = await tx('checklist', 'readwrite');
+      return new Promise((resolve, reject) => {
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    },
+
+    async getAllTravelInfo() {
+      const store = await tx('travelInfo', 'readonly');
+      return new Promise((resolve, reject) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    },
+
+    async putTravelInfo(item) {
+      const store = await tx('travelInfo', 'readwrite');
+      return new Promise((resolve, reject) => {
+        const req = store.put(item);
+        req.onsuccess = () => resolve(item);
+        req.onerror = () => reject(req.error);
+      });
+    },
+
+    async deleteTravelInfo(id) {
+      const store = await tx('travelInfo', 'readwrite');
       return new Promise((resolve, reject) => {
         const req = store.delete(id);
         req.onsuccess = () => resolve();

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -138,6 +138,11 @@
         </div>
         <input type="file" accept="image/*" capture="environment" id="photoFileInput" style="display:none;">
       </div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="excludeFromBudgetInput">
+        <span>Don't count this toward my budget <span class="field-optional">(still saved and shown in your report)</span></span>
+      </label>
     </div>
     <div class="modal-footer">
       <button class="secondary-btn" id="deleteExpenseBtn" style="display:none;">Delete</button>
@@ -210,6 +215,20 @@
         <button type="button" class="secondary-btn date-picker-btn" id="tripDatesBtn">📅 Set trip dates</button>
       </div>
 
+      <div class="field">
+        <span class="field-label">Budget display</span>
+        <div class="mode-toggle-row" id="countModeRow">
+          <button type="button" class="mode-toggle-btn" data-mode="countdown" id="countModeDownBtn">⬇️ Countdown</button>
+          <button type="button" class="mode-toggle-btn" data-mode="countup" id="countModeUpBtn">⬆️ Count up</button>
+        </div>
+        <p class="field-help">Countdown shows what's left to spend — good for a work trip with a hard budget. Count up totals what you've spent so far — good for a vacation with no strict limit.</p>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Travel Info <span class="field-optional">(optional)</span></span>
+        <button type="button" class="secondary-btn date-picker-btn" id="travelInfoBtn">✈️ Hotel, flight &amp; car rental info</button>
+      </div>
+
       <label class="field">
         <span class="field-label">Anthropic API key <span class="field-optional">(optional — enables receipt scanning)</span></span>
         <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
@@ -235,6 +254,13 @@
               <input type="number" inputmode="decimal" step="0.01" min="0" id="newTripBudgetInput" placeholder="811">
             </div>
           </label>
+          <div class="field">
+            <span class="field-label">Budget display</span>
+            <div class="mode-toggle-row" id="newCountModeRow">
+              <button type="button" class="mode-toggle-btn" data-mode="countdown" id="newCountModeDownBtn">⬇️ Countdown</button>
+              <button type="button" class="mode-toggle-btn" data-mode="countup" id="newCountModeUpBtn">⬆️ Count up</button>
+            </div>
+          </div>
           <div class="photo-row">
             <button type="button" class="secondary-btn" id="cancelNewTripBtn">Cancel</button>
             <button type="button" class="primary-btn" id="confirmNewTripBtn">Bank &amp; Start</button>
@@ -299,11 +325,79 @@
   </div>
 </div>
 
+<!-- Travel Info -->
+<div class="modal-overlay" id="travelInfoOverlay">
+  <div class="modal" id="travelInfoModal">
+    <div class="modal-header">
+      <h3 id="travelInfoTitle">Travel Info</h3>
+      <button class="icon-btn" data-close="travelInfoOverlay">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="travelInfoListView">
+        <button type="button" class="primary-btn" id="addTravelInfoBtn" style="width:100%;margin-bottom:14px;">＋ Add Travel Info</button>
+        <ul id="travelInfoList" class="travel-info-list"></ul>
+        <p class="field-help travel-info-empty" id="travelInfoEmpty">Hotel confirmations, flight details, car rental info — store a photo and the details here so it's all in one place, separate from your expenses.</p>
+      </div>
+
+      <div id="travelInfoFormView" style="display:none;">
+        <div id="travelPhotoPreviewWrap" class="receipt-preview-wrap" style="display:none;">
+          <img id="travelPhotoPreviewImg" class="receipt-preview-img" alt="Travel document">
+        </div>
+        <div class="photo-row" style="margin-bottom:18px;">
+          <button type="button" class="secondary-btn" id="travelAttachPhotoBtn">📎 Attach photo</button>
+          <button type="button" class="secondary-btn danger-text" id="travelRemovePhotoBtn" style="display:none;">Remove</button>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="travelPhotoFileInput" style="display:none;">
+
+        <div class="field">
+          <span class="field-label">Type</span>
+          <div class="category-chip-row" id="travelTypeChipRow"></div>
+        </div>
+
+        <label class="field">
+          <span class="field-label" id="travelNameLabel">Name</span>
+          <input type="text" id="travelNameInput" placeholder="e.g. Marriott, Delta, Enterprise">
+        </label>
+
+        <label class="field">
+          <span class="field-label">Confirmation #</span>
+          <input type="text" id="travelConfirmationInput" placeholder="e.g. ABC123">
+        </label>
+
+        <label class="field">
+          <span class="field-label" id="travelAddressLabel">Address / Location</span>
+          <input type="text" id="travelAddressInput" placeholder="e.g. 123 Main St, or JFK Terminal 4">
+        </label>
+
+        <label class="field">
+          <span class="field-label" id="travelStartLabel">Start</span>
+          <input type="datetime-local" id="travelStartInput">
+        </label>
+
+        <label class="field">
+          <span class="field-label" id="travelEndLabel">End</span>
+          <input type="datetime-local" id="travelEndInput">
+        </label>
+
+        <label class="field">
+          <span class="field-label">Notes <span class="field-optional">(optional)</span></span>
+          <input type="text" id="travelNotesInput" placeholder="Flight #, seat, terminal, anything else">
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer" id="travelInfoFormFooter" style="display:none;">
+      <button class="secondary-btn danger-text" id="deleteTravelInfoBtn" style="display:none;">Delete</button>
+      <button class="secondary-btn" id="backTravelInfoBtn">‹ Back</button>
+      <button class="primary-btn" id="saveTravelInfoBtn">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<script src="db.js"></script>
-<script src="claude.js"></script>
-<script src="datepicker.js"></script>
-<script src="app.js"></script>
+<script src="db.js?v=13"></script>
+<script src="claude.js?v=13"></script>
+<script src="datepicker.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

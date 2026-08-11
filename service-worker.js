@@ -1,15 +1,19 @@
 // Caches the app shell so it opens and works offline (all data lives in IndexedDB on-device).
 // Receipt scanning still needs a live connection to reach the Claude API.
 
-const CACHE_NAME = 'quick-budget-v10';
+// Bump this on every release. Also update the matching ?v= query strings on
+// the <script>/<link> tags in index.html — that busts Netlify's CDN cache and
+// the browser's plain HTTP cache, independent of this service worker's own
+// cache-first strategy below (both layers can otherwise serve stale JS/CSS).
+const CACHE_NAME = 'quick-budget-v13';
 const SHELL_FILES = [
   './',
   './index.html',
-  './style.css',
-  './app.js',
-  './db.js',
-  './claude.js',
-  './datepicker.js',
+  './style.css?v=13',
+  './app.js?v=13',
+  './db.js?v=13',
+  './claude.js?v=13',
+  './datepicker.js?v=13',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',

@@ -926,8 +926,10 @@
   el.cancelNewTripBtn.addEventListener('click', () => { el.newTripForm.style.display = 'none'; });
 
   el.confirmNewTripBtn.addEventListener('click', async () => {
-    const name = el.newTripNameInput.value.trim();
-    if (!name) { showToast('Give the new trip a name.'); el.newTripNameInput.focus(); return; }
+    // No name yet is fine — you're often closing out a finished trip without
+    // knowing the next one's name yet. Falls back to a generic default you can
+    // rename later in Settings whenever the next trip actually comes up.
+    const name = el.newTripNameInput.value.trim() || 'Trip Budget';
     const newBudget = parseFloat(el.newTripBudgetInput.value);
     const finalBudget = isNaN(newBudget) ? DEFAULT_BUDGET : newBudget;
 

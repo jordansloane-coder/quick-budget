@@ -5,7 +5,7 @@
 // the <script>/<link> tags in index.html — that busts Netlify's CDN cache and
 // the browser's plain HTTP cache, independent of this service worker's own
 // cache-first strategy below (both layers can otherwise serve stale JS/CSS).
-const CACHE_NAME = 'quick-budget-v18';
+const CACHE_NAME = 'quick-budget-v19';
 const SHELL_FILES = [
   './',
   './index.html',

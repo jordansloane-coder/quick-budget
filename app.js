@@ -2,7 +2,7 @@
   'use strict';
 
   const DEFAULT_CATEGORIES = ['Food', 'Gas', 'Lodging', 'Supplies', 'Transport', 'Other'];
-  const DEFAULT_BUDGET = 811;
+  const DEFAULT_BUDGET = 0;
   const MAX_IMAGE_DIM = 1400;
 
   const state = {
@@ -22,6 +22,7 @@
   const el = {
     bigNumber: $('bigNumber'), bigSub: $('bigSub'), progressFill: $('progressFill'),
     spentLabel: $('spentLabel'), budgetLabel: $('budgetLabel'), tripLabel: $('tripLabel'),
+    budgetProgressWrap: $('budgetProgressWrap'),
     countdownWrap: $('countdownWrap'), tripCountdown: $('tripCountdown'),
     expenseList: $('expenseList'), emptyState: $('emptyState'), countPill: $('countPill'),
     addBtn: $('addBtn'), scanBtn: $('scanBtn'), menuBtn: $('menuBtn'), settingsBtn: $('settingsBtn'),
@@ -45,11 +46,11 @@
     scanNoKeyNote: $('scanNoKeyNote'), scanNoKeySettingsLink: $('scanNoKeySettingsLink'),
 
     settingsModalOverlay: $('settingsModalOverlay'), tripNameInput: $('tripNameInput'),
-    budgetInput: $('budgetInput'), apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
+    budgetInput: $('budgetInput'), budgetField: $('budgetField'), apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
     resetAllBtn: $('resetAllBtn'), loadSampleBtn: $('loadSampleBtn'), tripDatesBtn: $('tripDatesBtn'),
     countModeDownBtn: $('countModeDownBtn'), countModeUpBtn: $('countModeUpBtn'),
     startNewTripBtn: $('startNewTripBtn'), newTripForm: $('newTripForm'), bankSummaryText: $('bankSummaryText'),
-    newTripNameInput: $('newTripNameInput'), newTripBudgetInput: $('newTripBudgetInput'), newTripDatesBtn: $('newTripDatesBtn'),
+    newTripNameInput: $('newTripNameInput'), newTripBudgetInput: $('newTripBudgetInput'), newTripBudgetField: $('newTripBudgetField'), newTripDatesBtn: $('newTripDatesBtn'),
     newCountModeDownBtn: $('newCountModeDownBtn'), newCountModeUpBtn: $('newCountModeUpBtn'),
     cancelNewTripBtn: $('cancelNewTripBtn'), confirmNewTripBtn: $('confirmNewTripBtn'),
     pastTripsSection: $('pastTripsSection'), pastTripsList: $('pastTripsList'),
@@ -229,24 +230,29 @@
     el.tripCountdown.textContent = countdownText;
     el.countdownWrap.style.display = countdownText ? '' : 'none';
 
-    if (state.trip.countMode === 'countup') {
+    const isCountUp = state.trip.countMode === 'countup';
+    el.budgetProgressWrap.style.display = isCountUp ? 'none' : '';
+
+    if (isCountUp) {
       el.bigNumber.textContent = fmtMoneyShort(spent);
-      el.bigSub.textContent = remaining < 0 ? 'spent so far — over budget' : 'spent so far';
+      el.bigSub.textContent = 'spent so far';
+      el.bigNumber.classList.remove('good', 'warn', 'bad');
+      el.bigNumber.classList.add('good');
     } else {
       el.bigNumber.textContent = remaining < 0 ? `-${fmtMoneyShort(Math.abs(remaining))}` : fmtMoneyShort(remaining);
       el.bigSub.textContent = remaining < 0 ? 'over budget' : 'left to spend';
+
+      el.bigNumber.classList.remove('good', 'warn', 'bad');
+      el.progressFill.classList.remove('warn', 'bad');
+      if (remaining < 0 || ratio < 0.15) { el.bigNumber.classList.add('bad'); el.progressFill.classList.add('bad'); }
+      else if (ratio < 0.35) { el.bigNumber.classList.add('warn'); el.progressFill.classList.add('warn'); }
+      else { el.bigNumber.classList.add('good'); }
+
+      const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+      el.progressFill.style.width = `${pct}%`;
+      el.spentLabel.textContent = `${fmtMoney(spent)} spent`;
+      el.budgetLabel.textContent = `of ${fmtMoney(budget)}`;
     }
-
-    el.bigNumber.classList.remove('good', 'warn', 'bad');
-    el.progressFill.classList.remove('warn', 'bad');
-    if (remaining < 0 || ratio < 0.15) { el.bigNumber.classList.add('bad'); el.progressFill.classList.add('bad'); }
-    else if (ratio < 0.35) { el.bigNumber.classList.add('warn'); el.progressFill.classList.add('warn'); }
-    else { el.bigNumber.classList.add('good'); }
-
-    const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
-    el.progressFill.style.width = `${pct}%`;
-    el.spentLabel.textContent = `${fmtMoney(spent)} spent`;
-    el.budgetLabel.textContent = `of ${fmtMoney(budget)}`;
 
     el.bigNumber.classList.add('pulse');
     setTimeout(() => el.bigNumber.classList.remove('pulse'), 280);
@@ -745,9 +751,10 @@
     }
   }
 
-  function renderCountModeToggle(downBtn, upBtn, mode) {
+  function renderCountModeToggle(downBtn, upBtn, mode, budgetFieldEl) {
     downBtn.classList.toggle('selected', mode !== 'countup');
     upBtn.classList.toggle('selected', mode === 'countup');
+    if (budgetFieldEl) budgetFieldEl.style.display = mode === 'countup' ? 'none' : '';
   }
 
   function openSettingsModal() {
@@ -758,7 +765,7 @@
     pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
     el.tripDatesBtn.textContent = dateRangeLabel(pendingTripDates.start, pendingTripDates.end);
     pendingCountMode = state.trip.countMode === 'countup' ? 'countup' : 'countdown';
-    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode);
+    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode, el.budgetField);
     renderPastTrips();
     updateGoogleUI();
     openModal(el.settingsModalOverlay);
@@ -768,19 +775,19 @@
 
   el.countModeDownBtn.addEventListener('click', () => {
     pendingCountMode = 'countdown';
-    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode);
+    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode, el.budgetField);
   });
   el.countModeUpBtn.addEventListener('click', () => {
     pendingCountMode = 'countup';
-    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode);
+    renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode, el.budgetField);
   });
   el.newCountModeDownBtn.addEventListener('click', () => {
     pendingNewCountMode = 'countdown';
-    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode);
+    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode, el.newTripBudgetField);
   });
   el.newCountModeUpBtn.addEventListener('click', () => {
     pendingNewCountMode = 'countup';
-    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode);
+    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode, el.newTripBudgetField);
   });
 
   el.tripDatesBtn.addEventListener('click', () => {
@@ -918,8 +925,9 @@
       pendingNewTripDates = { start: null, end: null };
       el.newTripDatesBtn.textContent = dateRangeLabel(null, null);
       pendingNewCountMode = 'countdown';
-      renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode);
-      el.bankSummaryText.textContent = `Saves your edits above, banks "${state.trip.name}" (${fmtMoney(totalSpent())} of ${fmtMoney(state.trip.budget)}) into Past Trips, then starts a fresh trip with what you enter below.`;
+      renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode, el.newTripBudgetField);
+      const bankedBudgetText = state.trip.countMode === 'countup' ? fmtMoney(totalSpent()) : `${fmtMoney(totalSpent())} of ${fmtMoney(state.trip.budget)}`;
+      el.bankSummaryText.textContent = `Saves your edits above, banks "${state.trip.name}" (${bankedBudgetText}) into Past Trips, then starts a fresh trip with what you enter below.`;
       setTimeout(() => el.newTripNameInput.focus(), 150);
     }
   });
@@ -997,9 +1005,13 @@
     }
     const spent = totalSpent(expenses);
     rows.push([]);
-    rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '']);
-    rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '']);
-    rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '']);
+    if (trip.countMode === 'countup') {
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '']);
+    } else {
+      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '']);
+      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '']);
+    }
 
     const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
     const filename = `${(trip.name || 'trip-budget').replace(/[^a-z0-9]+/gi, '-')}-expenses.csv`;
@@ -1099,9 +1111,13 @@
         <div class="report-dates">${dateRange}</div>
       </div>
       <div class="report-summary">
-        <div><div class="num">${fmtMoney(budget)}</div><div class="lbl">Budget</div></div>
-        <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Spent</div></div>
-        <div><div class="num">${fmtMoney(remaining)}</div><div class="lbl">${remaining < 0 ? 'Over' : 'Remaining'}</div></div>
+        ${trip.countMode === 'countup' ? `
+          <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Total Spent</div></div>
+        ` : `
+          <div><div class="num">${fmtMoney(budget)}</div><div class="lbl">Budget</div></div>
+          <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Spent</div></div>
+          <div><div class="num">${fmtMoney(remaining)}</div><div class="lbl">${remaining < 0 ? 'Over' : 'Remaining'}</div></div>
+        `}
       </div>
       ${reportCategoryBreakdownHtml(expenses)}
       ${expenses.length ? `

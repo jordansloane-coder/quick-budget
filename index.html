@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -30,16 +30,18 @@
     </div>
 
     <div class="big-number-wrap">
-      <div class="big-number" id="bigNumber">$811</div>
+      <div class="big-number" id="bigNumber">$0</div>
       <div class="big-sub" id="bigSub">left to spend</div>
     </div>
 
-    <div class="progress-track">
-      <div class="progress-fill" id="progressFill"></div>
-    </div>
-    <div class="progress-labels">
-      <span id="spentLabel">$0 spent</span>
-      <span id="budgetLabel">of $811</span>
+    <div id="budgetProgressWrap">
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-labels">
+        <span id="spentLabel">$0 spent</span>
+        <span id="budgetLabel">of $0</span>
+      </div>
     </div>
   </header>
 
@@ -203,11 +205,11 @@
         <input type="text" id="tripNameInput" placeholder="e.g. Atlanta Shoot">
       </label>
 
-      <label class="field">
+      <label class="field" id="budgetField">
         <span class="field-label">Starting budget</span>
         <div class="amount-input-wrap">
           <span class="dollar-sign">$</span>
-          <input type="number" inputmode="decimal" step="0.01" min="0" id="budgetInput" placeholder="811">
+          <input type="number" inputmode="decimal" step="0.01" min="0" id="budgetInput" placeholder="0">
         </div>
       </label>
 
@@ -264,11 +266,11 @@
             <span class="field-label">Trip dates <span class="field-optional">(optional)</span></span>
             <button type="button" class="secondary-btn date-picker-btn" id="newTripDatesBtn">📅 Set trip dates</button>
           </div>
-          <label class="field">
+          <label class="field" id="newTripBudgetField">
             <span class="field-label">Starting budget</span>
             <div class="amount-input-wrap">
               <span class="dollar-sign">$</span>
-              <input type="number" inputmode="decimal" step="0.01" min="0" id="newTripBudgetInput" placeholder="811">
+              <input type="number" inputmode="decimal" step="0.01" min="0" id="newTripBudgetInput" placeholder="0">
             </div>
           </label>
           <div class="field">
@@ -418,9 +420,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=18"></script>
-<script src="claude.js?v=18"></script>
-<script src="datepicker.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="db.js?v=19"></script>
+<script src="claude.js?v=19"></script>
+<script src="datepicker.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

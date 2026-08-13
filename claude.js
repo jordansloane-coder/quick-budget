@@ -10,7 +10,8 @@ const ClaudeReceipts = (() => {
 Extract the vendor name, the FINAL total amount charged (not subtotal, include tax/tip if shown), the date, the printed store address/location if the receipt shows one, and guess a spending category.
 Respond with ONLY raw JSON, no markdown fences, no commentary, matching exactly this shape:
 {"vendor": string|null, "total": number|null, "date": "YYYY-MM-DD"|null, "category": string|null, "address": string|null}
-Category must be one of: "Food", "Gas", "Lodging", "Supplies", "Transport", "Other" — pick your best guess.
+Category must be one of: "Food", "Groceries", "Gas", "Lodging", "Supplies", "Transport", "Other" — pick your best guess.
+"Groceries" is for grocery/supermarket shopping (Publix, Kroger, Trader Joe's, Whole Foods, etc.) — use "Food" for restaurants, takeout, and other prepared food instead.
 "address" is whatever street address / city / location text is printed on the receipt itself (often near the top, under the store name) — not a guess, only what's actually legible on the page.
 If a field truly cannot be determined from the image, use null for it. Never fabricate a value.`;
 

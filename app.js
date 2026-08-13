@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const DEFAULT_CATEGORIES = ['Food', 'Gas', 'Lodging', 'Supplies', 'Transport', 'Other'];
+  const DEFAULT_CATEGORIES = ['Food', 'Groceries', 'Gas', 'Lodging', 'Supplies', 'Transport', 'Other'];
   const DEFAULT_BUDGET = 0;
   const MAX_IMAGE_DIM = 1400;
 
@@ -258,7 +258,7 @@
     setTimeout(() => el.bigNumber.classList.remove('pulse'), 280);
   }
 
-  const CATEGORY_EMOJI = { Food: '🍔', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Other: '🧾' };
+  const CATEGORY_EMOJI = { Food: '🍔', Groceries: '🛒', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Other: '🧾' };
 
   function renderList() {
     const expenses = activeExpenses();
@@ -890,7 +890,7 @@
         photo: mk('The Home Depot', '1801 Howell Mill Rd, Atlanta GA', [['Gaffer Tape 2x', '$28.50'], ['AA Batteries 24pk', '$19.99'], ['Zip Ties', '$8.83'], ['Tax', '$7.00']], '$64.32') },
       { vendor: 'Subway', category: 'Food', amount: 12.50, offsetDays: -1, photo: null },
       { vendor: 'Uber', category: 'Transport', amount: 23.15, offsetDays: -1, photo: null },
-      { vendor: 'Publix', category: 'Food', amount: 87.90, offsetDays: 0,
+      { vendor: 'Publix', category: 'Groceries', amount: 87.90, offsetDays: 0,
         photo: mk('Publix', '55 Ivan Allen Jr Blvd, Atlanta GA', [['Craft Services Restock', '$81.40'], ['Tax', '$6.50']], '$87.90') },
       { vendor: 'Shell', category: 'Gas', amount: 48.10, offsetDays: 0,
         photo: mk('Shell', '4821 Peachtree Rd, Atlanta GA', [['Unleaded 13.1gal', '$48.10']], '$48.10') },

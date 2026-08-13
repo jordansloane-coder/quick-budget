@@ -1013,21 +1013,8 @@
   });
 
   // ---------- export: printable report ----------
-  function openReportModal(trip = state.trip, expenses = activeExpenses()) {
-    currentReportContext = { trip, expenses };
-
-    const spent = totalSpent(expenses);
-    const budget = trip.budget || 0;
-    const remaining = budget - spent;
-    const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-
-    const dateRange = trip.startDate
-      ? `${fmtLongDate(trip.startDate)}${trip.endDate ? ' – ' + fmtLongDate(trip.endDate) : ''}`
-      : sorted.length
-        ? `${fmtShortDate(sorted[0].date)} – ${fmtLongDate(sorted[sorted.length - 1].date)}`
-        : '';
-
-    const itemsHtml = sorted.map((e) => `
+  function reportItemHtml(e) {
+    return `
       <div class="report-item">
         ${e.photo ? `<img src="${e.photo}" alt="Receipt">` : ''}
         <div class="report-item-main">
@@ -1040,7 +1027,71 @@
           </div>
         </div>
       </div>
-    `).join('');
+    `;
+  }
+
+  function categoryTotals(expenses) {
+    const totals = {};
+    for (const e of expenses) {
+      const cat = e.category || 'Other';
+      totals[cat] = (totals[cat] || 0) + e.amount;
+    }
+    return Object.entries(totals).sort((a, b) => b[1] - a[1]); // biggest category first
+  }
+
+  function reportCategoryBreakdownHtml(expenses) {
+    if (expenses.length === 0) return '';
+    const rows = categoryTotals(expenses);
+    return `
+      <div class="report-breakdown">
+        <div class="report-section-title">By Category</div>
+        ${rows.map(([cat, total]) => `
+          <div class="report-breakdown-row">
+            <span>${escapeHtml(cat)}</span>
+            <span>${fmtMoney(total)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderReportItemsHtml(expenses, mode) {
+    if (expenses.length === 0) return '<p style="text-align:center;color:#888;">No expenses logged.</p>';
+    const byDate = (a, b) => (a.date || '').localeCompare(b.date || '');
+
+    if (mode === 'category') {
+      return categoryTotals(expenses).map(([cat, total]) => `
+        <div class="report-group">
+          <div class="report-group-header"><span>${escapeHtml(cat)}</span><span>${fmtMoney(total)}</span></div>
+          ${expenses.filter((e) => (e.category || 'Other') === cat).sort(byDate).map(reportItemHtml).join('')}
+        </div>
+      `).join('');
+    }
+    return [...expenses].sort(byDate).map(reportItemHtml).join('');
+  }
+
+  let reportSortMode = 'date';
+
+  function renderReportItemsSection() {
+    if (!currentReportContext) return;
+    const container = $('reportItemsContainer');
+    if (container) container.innerHTML = renderReportItemsHtml(currentReportContext.expenses, reportSortMode);
+  }
+
+  function openReportModal(trip = state.trip, expenses = activeExpenses()) {
+    currentReportContext = { trip, expenses };
+    reportSortMode = 'date';
+
+    const spent = totalSpent(expenses);
+    const budget = trip.budget || 0;
+    const remaining = budget - spent;
+    const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    const dateRange = trip.startDate
+      ? `${fmtLongDate(trip.startDate)}${trip.endDate ? ' – ' + fmtLongDate(trip.endDate) : ''}`
+      : sorted.length
+        ? `${fmtShortDate(sorted[0].date)} – ${fmtLongDate(sorted[sorted.length - 1].date)}`
+        : '';
 
     el.reportBody.innerHTML = `
       <div class="report-cover">
@@ -1052,8 +1103,34 @@
         <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Spent</div></div>
         <div><div class="num">${fmtMoney(remaining)}</div><div class="lbl">${remaining < 0 ? 'Over' : 'Remaining'}</div></div>
       </div>
-      ${sorted.length ? itemsHtml : '<p style="text-align:center;color:#888;">No expenses logged.</p>'}
+      ${reportCategoryBreakdownHtml(expenses)}
+      ${expenses.length ? `
+        <div class="report-sort-row no-print">
+          <span class="report-section-title">Sort</span>
+          <div class="report-sort-toggle">
+            <button type="button" class="report-sort-btn selected" id="reportSortDateBtn">📅 Date</button>
+            <button type="button" class="report-sort-btn" id="reportSortCategoryBtn">🏷️ Category</button>
+          </div>
+        </div>
+      ` : ''}
+      <div id="reportItemsContainer">${renderReportItemsHtml(expenses, 'date')}</div>
     `;
+
+    if (expenses.length) {
+      $('reportSortDateBtn').addEventListener('click', () => {
+        reportSortMode = 'date';
+        $('reportSortDateBtn').classList.add('selected');
+        $('reportSortCategoryBtn').classList.remove('selected');
+        renderReportItemsSection();
+      });
+      $('reportSortCategoryBtn').addEventListener('click', () => {
+        reportSortMode = 'category';
+        $('reportSortCategoryBtn').classList.add('selected');
+        $('reportSortDateBtn').classList.remove('selected');
+        renderReportItemsSection();
+      });
+    }
+
     openModal(el.reportModalOverlay);
   }
 

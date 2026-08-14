@@ -15,6 +15,7 @@
     editingId: null,
     pendingPhoto: null,   // dataURL currently attached in the expense modal
     pendingAddress: null, // address text currently attached in the expense modal (from a scanned receipt)
+    filterReimbursement: false, // when true, the on-screen list shows only reimbursement-tagged expenses
   };
 
   // ---------- element refs ----------
@@ -25,6 +26,7 @@
     budgetProgressWrap: $('budgetProgressWrap'),
     countdownWrap: $('countdownWrap'), tripCountdown: $('tripCountdown'),
     expenseList: $('expenseList'), emptyState: $('emptyState'), countPill: $('countPill'),
+    reimbursementFilterBtn: $('reimbursementFilterBtn'),
     addBtn: $('addBtn'), scanBtn: $('scanBtn'), menuBtn: $('menuBtn'), settingsBtn: $('settingsBtn'),
 
     checklistToggle: $('checklistToggle'), checklistBody: $('checklistBody'), checklistCount: $('checklistCount'),
@@ -35,7 +37,7 @@
     categoryInput: $('categoryInput'), categoryChipRow: $('categoryChipRow'), categoryDatalist: $('categoryDatalist'),
     receiptPreviewWrap: $('receiptPreviewWrap'), receiptPreviewImg: $('receiptPreviewImg'),
     attachPhotoBtn: $('attachPhotoBtn'), removePhotoBtn: $('removePhotoBtn'), photoFileInput: $('photoFileInput'),
-    excludeFromBudgetInput: $('excludeFromBudgetInput'),
+    excludeFromBudgetInput: $('excludeFromBudgetInput'), reimbursementInput: $('reimbursementInput'),
     saveExpenseBtn: $('saveExpenseBtn'), deleteExpenseBtn: $('deleteExpenseBtn'), aiReadBtn: $('aiReadBtn'),
 
     scanModalOverlay: $('scanModalOverlay'),
@@ -261,10 +263,15 @@
   const CATEGORY_EMOJI = { Food: '🍔', Groceries: '🛒', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Other: '🧾' };
 
   function renderList() {
-    const expenses = activeExpenses();
+    const all = activeExpenses();
+    const expenses = state.filterReimbursement ? all.filter((e) => e.reimbursement) : all;
     el.expenseList.innerHTML = '';
     el.emptyState.classList.toggle('visible', expenses.length === 0);
+    $('emptyStateText').textContent = state.filterReimbursement
+      ? 'No reimbursement-tagged expenses yet.'
+      : 'No expenses yet. Log your first one, or scan a receipt.';
     el.countPill.textContent = String(expenses.length);
+    el.reimbursementFilterBtn.classList.toggle('active', state.filterReimbursement);
 
     for (const expense of expenses) {
       const li = document.createElement('li');
@@ -285,6 +292,7 @@
             <span class="category-tag">${escapeHtml(expense.category || 'Other')}</span>
             <span>${dateStr}</span>
             ${expense.excludeFromBudget ? '<span class="excluded-tag">Not counted</span>' : ''}
+            ${expense.reimbursement ? '<span class="reimburse-tag">Reimbursement</span>' : ''}
           </div>
         </div>
         <div class="expense-amount">${fmtMoney(expense.amount)}</div>
@@ -293,6 +301,11 @@
       el.expenseList.appendChild(li);
     }
   }
+
+  el.reimbursementFilterBtn.addEventListener('click', () => {
+    state.filterReimbursement = !state.filterReimbursement;
+    renderList();
+  });
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -403,6 +416,7 @@
     el.categoryInput.value = source.category || '';
     renderCategoryChips(source.category || '');
     el.excludeFromBudgetInput.checked = !!source.excludeFromBudget;
+    el.reimbursementInput.checked = !!source.reimbursement;
 
     if (state.pendingPhoto) {
       el.receiptPreviewImg.src = state.pendingPhoto;
@@ -462,6 +476,7 @@
         photo: state.pendingPhoto || null,
         address: state.pendingAddress || null,
         excludeFromBudget: el.excludeFromBudgetInput.checked,
+        reimbursement: el.reimbursementInput.checked,
         createdAt: existing ? existing.createdAt : Date.now(),
       };
 
@@ -998,19 +1013,23 @@
 
   function exportCsv(trip = state.trip, expenses = activeExpenses()) {
     if (expenses.length === 0) { showToast('No expenses to export yet.'); return; }
-    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Location', 'Has Photo']];
+    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Reimbursement', 'Location', 'Has Photo']];
     const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     for (const e of sorted) {
-      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', locationLabel(e), e.photo ? 'Yes' : 'No']);
+      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', e.reimbursement ? 'Yes' : 'No', locationLabel(e), e.photo ? 'Yes' : 'No']);
     }
     const spent = totalSpent(expenses);
+    const reimbursementTotal = expenses.filter((e) => e.reimbursement).reduce((sum, e) => sum + e.amount, 0);
     rows.push([]);
     if (trip.countMode === 'countup') {
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '']);
     } else {
-      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '']);
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '']);
-      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '']);
+      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '']);
+      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '', '']);
+    }
+    if (reimbursementTotal > 0) {
+      rows.push(['', '', '', 'Total reimbursements', reimbursementTotal.toFixed(2), '', '', '', '']);
     }
 
     const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
@@ -1033,7 +1052,7 @@
           <div class="report-item-row">
             <div>
               <div class="report-item-vendor">${escapeHtml(e.vendor || 'Expense')}</div>
-              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${e.excludeFromBudget ? ' · not counted toward budget' : ''}</div>
+              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${e.excludeFromBudget ? ' · not counted toward budget' : ''}${e.reimbursement ? ' · reimbursement' : ''}</div>
             </div>
             <div class="report-item-amount">${fmtMoney(e.amount)}</div>
           </div>

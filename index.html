@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -77,6 +77,9 @@
       <h2>Expenses</h2>
       <span class="count-pill" id="countPill">0</span>
       <button type="button" class="filter-pill" id="reimbursementFilterBtn">🏷️ Reimbursement</button>
+    </div>
+    <div class="reimbursement-total-bar" id="reimbursementTotalBar" style="display:none;">
+      Reimbursement total <span id="reimbursementTotalAmount">$0.00</span>
     </div>
     <ul id="expenseList" class="expense-list"></ul>
     <div class="empty-state" id="emptyState">
@@ -426,9 +429,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=22"></script>
-<script src="claude.js?v=22"></script>
-<script src="datepicker.js?v=22"></script>
-<script src="app.js?v=22"></script>
+<script src="db.js?v=23"></script>
+<script src="claude.js?v=23"></script>
+<script src="datepicker.js?v=23"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

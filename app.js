@@ -27,6 +27,7 @@
     countdownWrap: $('countdownWrap'), tripCountdown: $('tripCountdown'),
     expenseList: $('expenseList'), emptyState: $('emptyState'), countPill: $('countPill'),
     reimbursementFilterBtn: $('reimbursementFilterBtn'),
+    reimbursementTotalBar: $('reimbursementTotalBar'), reimbursementTotalAmount: $('reimbursementTotalAmount'),
     addBtn: $('addBtn'), scanBtn: $('scanBtn'), menuBtn: $('menuBtn'), settingsBtn: $('settingsBtn'),
 
     checklistToggle: $('checklistToggle'), checklistBody: $('checklistBody'), checklistCount: $('checklistCount'),
@@ -272,6 +273,14 @@
       : 'No expenses yet. Log your first one, or scan a receipt.';
     el.countPill.textContent = String(expenses.length);
     el.reimbursementFilterBtn.classList.toggle('active', state.filterReimbursement);
+
+    if (state.filterReimbursement) {
+      const reimbursementTotal = expenses.reduce((sum, e) => sum + e.amount, 0);
+      el.reimbursementTotalAmount.textContent = fmtMoney(reimbursementTotal);
+      el.reimbursementTotalBar.style.display = '';
+    } else {
+      el.reimbursementTotalBar.style.display = 'none';
+    }
 
     for (const expense of expenses) {
       const li = document.createElement('li');

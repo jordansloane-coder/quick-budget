@@ -24,6 +24,7 @@
     bigNumber: $('bigNumber'), bigSub: $('bigSub'), progressFill: $('progressFill'),
     spentLabel: $('spentLabel'), budgetLabel: $('budgetLabel'), tripLabel: $('tripLabel'),
     budgetProgressWrap: $('budgetProgressWrap'),
+    perDiemWrap: $('perDiemWrap'), perDiemAmount: $('perDiemAmount'), perDiemSub: $('perDiemSub'),
     countdownWrap: $('countdownWrap'), tripCountdown: $('tripCountdown'),
     expenseList: $('expenseList'), emptyState: $('emptyState'), countPill: $('countPill'),
     reimbursementFilterBtn: $('reimbursementFilterBtn'),
@@ -39,6 +40,7 @@
     receiptPreviewWrap: $('receiptPreviewWrap'), receiptPreviewImg: $('receiptPreviewImg'),
     attachPhotoBtn: $('attachPhotoBtn'), removePhotoBtn: $('removePhotoBtn'), photoFileInput: $('photoFileInput'),
     excludeFromBudgetInput: $('excludeFromBudgetInput'), reimbursementInput: $('reimbursementInput'),
+    perDiemCheckboxRow: $('perDiemCheckboxRow'), perDiemCheckboxInput: $('perDiemCheckboxInput'),
     saveExpenseBtn: $('saveExpenseBtn'), deleteExpenseBtn: $('deleteExpenseBtn'), aiReadBtn: $('aiReadBtn'),
 
     scanModalOverlay: $('scanModalOverlay'),
@@ -49,11 +51,13 @@
     scanNoKeyNote: $('scanNoKeyNote'), scanNoKeySettingsLink: $('scanNoKeySettingsLink'),
 
     settingsModalOverlay: $('settingsModalOverlay'), tripNameInput: $('tripNameInput'),
-    budgetInput: $('budgetInput'), budgetField: $('budgetField'), apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
+    budgetInput: $('budgetInput'), budgetField: $('budgetField'), perDiemInput: $('perDiemInput'),
+    apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
     resetAllBtn: $('resetAllBtn'), loadSampleBtn: $('loadSampleBtn'), tripDatesBtn: $('tripDatesBtn'),
     countModeDownBtn: $('countModeDownBtn'), countModeUpBtn: $('countModeUpBtn'),
     startNewTripBtn: $('startNewTripBtn'), newTripForm: $('newTripForm'), bankSummaryText: $('bankSummaryText'),
     newTripNameInput: $('newTripNameInput'), newTripBudgetInput: $('newTripBudgetInput'), newTripBudgetField: $('newTripBudgetField'), newTripDatesBtn: $('newTripDatesBtn'),
+    newPerDiemInput: $('newPerDiemInput'),
     newCountModeDownBtn: $('newCountModeDownBtn'), newCountModeUpBtn: $('newCountModeUpBtn'),
     cancelNewTripBtn: $('cancelNewTripBtn'), confirmNewTripBtn: $('confirmNewTripBtn'),
     pastTripsSection: $('pastTripsSection'), pastTripsList: $('pastTripsList'),
@@ -257,8 +261,26 @@
       el.budgetLabel.textContent = `of ${fmtMoney(budget)}`;
     }
 
+    renderPerDiem();
+
     el.bigNumber.classList.add('pulse');
     setTimeout(() => el.bigNumber.classList.remove('pulse'), 280);
+  }
+
+  function renderPerDiem() {
+    const rate = state.trip.perDiemRate || 0;
+    if (!rate) { el.perDiemWrap.style.display = 'none'; return; }
+
+    const today = todayISO();
+    const spentToday = activeExpenses()
+      .filter((e) => e.perDiem && e.date === today)
+      .reduce((sum, e) => sum + e.amount, 0);
+    const remaining = rate - spentToday;
+
+    el.perDiemWrap.style.display = '';
+    el.perDiemAmount.textContent = remaining < 0 ? `${fmtMoney(Math.abs(remaining))} over` : `${fmtMoney(remaining)} left`;
+    el.perDiemAmount.classList.toggle('bad', remaining < 0);
+    el.perDiemSub.textContent = `${fmtMoney(spentToday)} of ${fmtMoney(rate)}/day`;
   }
 
   const CATEGORY_EMOJI = { Food: '🍔', Groceries: '🛒', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Other: '🧾' };
@@ -302,6 +324,7 @@
             <span>${dateStr}</span>
             ${expense.excludeFromBudget ? '<span class="excluded-tag">Not counted</span>' : ''}
             ${expense.reimbursement ? '<span class="reimburse-tag">Reimbursement</span>' : ''}
+            ${expense.perDiem ? '<span class="perdiem-tag">Per Diem</span>' : ''}
           </div>
         </div>
         <div class="expense-amount">${fmtMoney(expense.amount)}</div>
@@ -426,6 +449,8 @@
     renderCategoryChips(source.category || '');
     el.excludeFromBudgetInput.checked = !!source.excludeFromBudget;
     el.reimbursementInput.checked = !!source.reimbursement;
+    el.perDiemCheckboxRow.style.display = state.trip.perDiemRate ? '' : 'none';
+    el.perDiemCheckboxInput.checked = !!source.perDiem;
 
     if (state.pendingPhoto) {
       el.receiptPreviewImg.src = state.pendingPhoto;
@@ -486,6 +511,7 @@
         address: state.pendingAddress || null,
         excludeFromBudget: el.excludeFromBudgetInput.checked,
         reimbursement: el.reimbursementInput.checked,
+        perDiem: el.perDiemCheckboxInput.checked,
         createdAt: existing ? existing.createdAt : Date.now(),
       };
 
@@ -784,6 +810,7 @@
   function openSettingsModal() {
     el.tripNameInput.value = state.trip.name || '';
     el.budgetInput.value = state.trip.budget != null ? state.trip.budget : '';
+    el.perDiemInput.value = state.trip.perDiemRate != null ? state.trip.perDiemRate : '';
     el.apiKeyInput.value = state.settings.apiKey || '';
     el.newTripForm.style.display = 'none';
     pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
@@ -838,10 +865,12 @@
 
   el.saveSettingsBtn.addEventListener('click', async () => {
     const budget = parseFloat(el.budgetInput.value);
+    const perDiemRate = parseFloat(el.perDiemInput.value);
     const updatedTrip = {
       ...state.trip,
       name: el.tripNameInput.value.trim() || 'Trip Budget',
       budget: isNaN(budget) ? DEFAULT_BUDGET : budget,
+      perDiemRate: isNaN(perDiemRate) ? null : perDiemRate,
       startDate: pendingTripDates.start,
       endDate: pendingTripDates.end,
       countMode: pendingCountMode,
@@ -946,6 +975,7 @@
     if (opening) {
       el.newTripNameInput.value = '';
       el.newTripBudgetInput.value = state.trip.budget || '';
+      el.newPerDiemInput.value = state.trip.perDiemRate || '';
       pendingNewTripDates = { start: null, end: null };
       el.newTripDatesBtn.textContent = dateRangeLabel(null, null);
       pendingNewCountMode = 'countdown';
@@ -964,10 +994,12 @@
     const name = el.newTripNameInput.value.trim() || 'Trip Budget';
     const newBudget = parseFloat(el.newTripBudgetInput.value);
     const finalBudget = isNaN(newBudget) ? DEFAULT_BUDGET : newBudget;
+    const newPerDiemRate = parseFloat(el.newPerDiemInput.value);
 
     // "Save & Bank Trip" also saves whatever's currently in the Current Trip / API key
     // fields, so nothing typed this session is lost when the trip gets archived.
     const currentBudget = parseFloat(el.budgetInput.value);
+    const currentPerDiemRate = parseFloat(el.perDiemInput.value);
     state.settings.apiKey = el.apiKeyInput.value.trim();
     await DB.setMeta('apiKey', state.settings.apiKey);
 
@@ -975,6 +1007,7 @@
       ...state.trip,
       name: el.tripNameInput.value.trim() || state.trip.name,
       budget: isNaN(currentBudget) ? state.trip.budget : currentBudget,
+      perDiemRate: isNaN(currentPerDiemRate) ? state.trip.perDiemRate : currentPerDiemRate,
       startDate: pendingTripDates.start,
       endDate: pendingTripDates.end,
       countMode: pendingCountMode,
@@ -986,6 +1019,7 @@
       id: uid(),
       name,
       budget: finalBudget,
+      perDiemRate: isNaN(newPerDiemRate) ? null : newPerDiemRate,
       startDate: pendingNewTripDates.start,
       endDate: pendingNewTripDates.end,
       countMode: pendingNewCountMode,
@@ -1022,23 +1056,27 @@
 
   function exportCsv(trip = state.trip, expenses = activeExpenses()) {
     if (expenses.length === 0) { showToast('No expenses to export yet.'); return; }
-    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Reimbursement', 'Location', 'Has Photo']];
+    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Reimbursement', 'Per Diem', 'Location', 'Has Photo']];
     const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     for (const e of sorted) {
-      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', e.reimbursement ? 'Yes' : 'No', locationLabel(e), e.photo ? 'Yes' : 'No']);
+      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', e.reimbursement ? 'Yes' : 'No', e.perDiem ? 'Yes' : 'No', locationLabel(e), e.photo ? 'Yes' : 'No']);
     }
     const spent = totalSpent(expenses);
     const reimbursementTotal = expenses.filter((e) => e.reimbursement).reduce((sum, e) => sum + e.amount, 0);
+    const perDiemTotal = expenses.filter((e) => e.perDiem).reduce((sum, e) => sum + e.amount, 0);
     rows.push([]);
     if (trip.countMode === 'countup') {
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '']);
     } else {
-      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '', '']);
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '']);
-      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '', '']);
+      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '']);
+      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '', '', '']);
     }
     if (reimbursementTotal > 0) {
-      rows.push(['', '', '', 'Total reimbursements', reimbursementTotal.toFixed(2), '', '', '', '']);
+      rows.push(['', '', '', 'Total reimbursements', reimbursementTotal.toFixed(2), '', '', '', '', '']);
+    }
+    if (perDiemTotal > 0) {
+      rows.push(['', '', '', 'Total per diem tagged', perDiemTotal.toFixed(2), '', '', '', '', '']);
     }
 
     const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
@@ -1061,7 +1099,7 @@
           <div class="report-item-row">
             <div>
               <div class="report-item-vendor">${escapeHtml(e.vendor || 'Expense')}</div>
-              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${e.excludeFromBudget ? ' · not counted toward budget' : ''}${e.reimbursement ? ' · reimbursement' : ''}</div>
+              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${e.excludeFromBudget ? ' · not counted toward budget' : ''}${e.reimbursement ? ' · reimbursement' : ''}${e.perDiem ? ' · per diem' : ''}</div>
             </div>
             <div class="report-item-amount">${fmtMoney(e.amount)}</div>
           </div>

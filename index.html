@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -42,6 +42,14 @@
         <span id="spentLabel">$0 spent</span>
         <span id="budgetLabel">of $0</span>
       </div>
+    </div>
+
+    <div class="per-diem-wrap" id="perDiemWrap" style="display:none;">
+      <div class="per-diem-row">
+        <span class="per-diem-label">Per Diem Today</span>
+        <span class="per-diem-amount" id="perDiemAmount">$0 left</span>
+      </div>
+      <div class="per-diem-sub" id="perDiemSub">$0 of $0/day</div>
     </div>
   </header>
 
@@ -155,6 +163,11 @@
         <input type="checkbox" id="reimbursementInput">
         <span>Reimbursement <span class="field-optional">(owed to you or by you — still counts toward the budget total)</span></span>
       </label>
+
+      <label class="checkbox-row" id="perDiemCheckboxRow" style="display:none;">
+        <input type="checkbox" id="perDiemCheckboxInput">
+        <span>Count toward per diem <span class="field-optional">(tracked separately as today's daily allowance)</span></span>
+      </label>
     </div>
     <div class="modal-footer">
       <button class="secondary-btn" id="deleteExpenseBtn" style="display:none;">Delete</button>
@@ -222,6 +235,14 @@
         </div>
       </label>
 
+      <label class="field">
+        <span class="field-label">Per diem <span class="field-optional">(optional — a daily allowance, tracked separately below the main total)</span></span>
+        <div class="amount-input-wrap">
+          <span class="dollar-sign">$</span>
+          <input type="number" inputmode="decimal" step="0.01" min="0" id="perDiemInput" placeholder="e.g. 75">
+        </div>
+      </label>
+
       <div class="field">
         <span class="field-label">Trip dates <span class="field-optional">(optional)</span></span>
         <button type="button" class="secondary-btn date-picker-btn" id="tripDatesBtn">📅 Set trip dates</button>
@@ -280,6 +301,13 @@
             <div class="amount-input-wrap">
               <span class="dollar-sign">$</span>
               <input type="number" inputmode="decimal" step="0.01" min="0" id="newTripBudgetInput" placeholder="0">
+            </div>
+          </label>
+          <label class="field">
+            <span class="field-label">Per diem <span class="field-optional">(optional)</span></span>
+            <div class="amount-input-wrap">
+              <span class="dollar-sign">$</span>
+              <input type="number" inputmode="decimal" step="0.01" min="0" id="newPerDiemInput" placeholder="e.g. 75">
             </div>
           </label>
           <div class="field">
@@ -429,9 +457,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=23"></script>
-<script src="claude.js?v=23"></script>
-<script src="datepicker.js?v=23"></script>
-<script src="app.js?v=23"></script>
+<script src="db.js?v=24"></script>
+<script src="claude.js?v=24"></script>
+<script src="datepicker.js?v=24"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

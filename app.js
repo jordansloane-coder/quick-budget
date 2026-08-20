@@ -67,6 +67,7 @@
 
     reportSetupOverlay: $('reportSetupOverlay'), generateReportBtn: $('generateReportBtn'),
     reportTitleInput: $('reportTitleInput'), reportSubtitleInput: $('reportSubtitleInput'), reportDatesInput: $('reportDatesInput'),
+    reportShowSummaryInput: $('reportShowSummaryInput'), reportShowBreakdownInput: $('reportShowBreakdownInput'),
     preparerNameInput: $('preparerNameInput'), preparerCompanyInput: $('preparerCompanyInput'), preparerPhoneInput: $('preparerPhoneInput'),
     clientNameInput: $('clientNameInput'), clientCompanyInput: $('clientCompanyInput'), clientPhoneInput: $('clientPhoneInput'),
     scanModalTitle: $('scanModalTitle'), scanChooseHint: $('scanChooseHint'), scanLoadingHint: $('scanLoadingHint'),
@@ -1178,6 +1179,8 @@
     el.reportTitleInput.value = trip.reportTitle || trip.name || 'Trip Budget';
     el.reportSubtitleInput.value = trip.reportSubtitle || '';
     el.reportDatesInput.value = trip.reportDatesText || defaultReportDateRange(trip, expenses);
+    el.reportShowSummaryInput.checked = trip.reportShowSummary !== false;
+    el.reportShowBreakdownInput.checked = trip.reportShowBreakdown !== false;
 
     // DB.getMeta's fallback only applies when the key was never saved — an empty string,
     // once saved, would otherwise permanently shadow these defaults. Treat blank the same
@@ -1211,6 +1214,8 @@
         reportTitle: el.reportTitleInput.value.trim(),
         reportSubtitle: el.reportSubtitleInput.value.trim(),
         reportDatesText: el.reportDatesInput.value.trim(),
+        reportShowSummary: el.reportShowSummaryInput.checked,
+        reportShowBreakdown: el.reportShowBreakdownInput.checked,
         clientName: el.clientNameInput.value.trim(),
         clientCompany: el.clientCompanyInput.value.trim(),
         clientPhone: el.clientPhoneInput.value.trim(),
@@ -1263,16 +1268,18 @@
         ${dateRange ? `<div class="report-dates">${escapeHtml(dateRange)}</div>` : ''}
         ${partiesHtml}
       </div>
-      <div class="report-summary">
-        ${trip.countMode === 'countup' ? `
-          <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Total Spent</div></div>
-        ` : `
-          <div><div class="num">${fmtMoney(budget)}</div><div class="lbl">Budget</div></div>
-          <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Spent</div></div>
-          <div><div class="num">${fmtMoney(remaining)}</div><div class="lbl">${remaining < 0 ? 'Over' : 'Remaining'}</div></div>
-        `}
-      </div>
-      ${reportCategoryBreakdownHtml(expenses)}
+      ${trip.reportShowSummary === false ? '' : `
+        <div class="report-summary">
+          ${trip.countMode === 'countup' ? `
+            <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Total Spent</div></div>
+          ` : `
+            <div><div class="num">${fmtMoney(budget)}</div><div class="lbl">Budget</div></div>
+            <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Spent</div></div>
+            <div><div class="num">${fmtMoney(remaining)}</div><div class="lbl">${remaining < 0 ? 'Over' : 'Remaining'}</div></div>
+          `}
+        </div>
+      `}
+      ${trip.reportShowBreakdown === false ? '' : reportCategoryBreakdownHtml(expenses)}
       ${expenses.length ? `
         <div class="report-sort-row no-print">
           <span class="report-section-title">Sort</span>

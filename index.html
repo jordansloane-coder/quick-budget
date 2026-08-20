@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=27">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -362,6 +362,15 @@
         <input type="text" id="reportDatesInput" placeholder="e.g. Aug 12 – Aug 16, 2026">
       </label>
 
+      <label class="checkbox-row">
+        <input type="checkbox" id="reportShowSummaryInput" checked>
+        <span>Show budget summary <span class="field-optional">(Budget / Spent / Remaining row)</span></span>
+      </label>
+      <label class="checkbox-row" style="margin-bottom:16px;">
+        <input type="checkbox" id="reportShowBreakdownInput" checked>
+        <span>Show category breakdown <span class="field-optional">("By Category" box)</span></span>
+      </label>
+
       <span class="field-label section-label">Prepared By (You)</span>
       <label class="field">
         <span class="field-label">Name <span class="field-optional">(optional)</span></span>
@@ -513,9 +522,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=26"></script>
-<script src="claude.js?v=26"></script>
-<script src="datepicker.js?v=26"></script>
-<script src="app.js?v=26"></script>
+<script src="db.js?v=27"></script>
+<script src="claude.js?v=27"></script>
+<script src="datepicker.js?v=27"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>

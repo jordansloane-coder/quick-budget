@@ -1053,7 +1053,29 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   margin-bottom: 20px;
 }
 .report-cover h1 { margin: 0 0 4px; font-size: 24px; }
+.report-cover .report-subtitle { color: #444; font-size: 15px; margin-bottom: 4px; }
 .report-cover .report-dates { color: #666; font-size: 13px; }
+.report-parties {
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  margin-top: 20px;
+  text-align: left;
+}
+.report-party {
+  font-size: 12.5px;
+  color: #444;
+  line-height: 1.55;
+}
+.report-party-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #999;
+  margin-bottom: 3px;
+}
+.report-party-name { font-weight: 700; font-size: 13.5px; color: #111; }
 .report-summary {
   display: flex;
   justify-content: space-around;

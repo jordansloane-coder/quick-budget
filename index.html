@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -340,6 +340,62 @@
   </div>
 </div>
 
+<!-- Report Setup (cover page details) -->
+<div class="modal-overlay" id="reportSetupOverlay">
+  <div class="modal" id="reportSetupModal">
+    <div class="modal-header">
+      <h3>Report Cover Page</h3>
+      <button class="icon-btn" data-close="reportSetupOverlay">✕</button>
+    </div>
+    <div class="modal-body">
+      <span class="field-label section-label">Report</span>
+      <label class="field">
+        <span class="field-label">Title</span>
+        <input type="text" id="reportTitleInput" placeholder="e.g. Atlanta Shoot">
+      </label>
+      <label class="field">
+        <span class="field-label">Subtitle <span class="field-optional">(optional)</span></span>
+        <input type="text" id="reportSubtitleInput" placeholder="e.g. Trip Expense Report">
+      </label>
+      <label class="field">
+        <span class="field-label">Dates <span class="field-optional">(optional)</span></span>
+        <input type="text" id="reportDatesInput" placeholder="e.g. Aug 12 – Aug 16, 2026">
+      </label>
+
+      <span class="field-label section-label">Prepared By (You)</span>
+      <label class="field">
+        <span class="field-label">Name <span class="field-optional">(optional)</span></span>
+        <input type="text" id="preparerNameInput" placeholder="Your name">
+      </label>
+      <label class="field">
+        <span class="field-label">Company <span class="field-optional">(optional)</span></span>
+        <input type="text" id="preparerCompanyInput" placeholder="Your company">
+      </label>
+      <label class="field">
+        <span class="field-label">Phone <span class="field-optional">(optional)</span></span>
+        <input type="tel" id="preparerPhoneInput" placeholder="Your phone number">
+      </label>
+
+      <span class="field-label section-label">Prepared For (Client)</span>
+      <label class="field">
+        <span class="field-label">Name <span class="field-optional">(optional)</span></span>
+        <input type="text" id="clientNameInput" placeholder="Client name">
+      </label>
+      <label class="field">
+        <span class="field-label">Company <span class="field-optional">(optional)</span></span>
+        <input type="text" id="clientCompanyInput" placeholder="Client company">
+      </label>
+      <label class="field">
+        <span class="field-label">Phone <span class="field-optional">(optional)</span></span>
+        <input type="tel" id="clientPhoneInput" placeholder="Client phone number">
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="primary-btn" id="generateReportBtn">Generate Report</button>
+    </div>
+  </div>
+</div>
+
 <!-- Report Modal (printable) -->
 <div class="modal-overlay" id="reportModalOverlay">
   <div class="modal modal-wide" id="reportModal">
@@ -457,9 +513,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=24"></script>
-<script src="claude.js?v=24"></script>
-<script src="datepicker.js?v=24"></script>
-<script src="app.js?v=24"></script>
+<script src="db.js?v=25"></script>
+<script src="claude.js?v=25"></script>
+<script src="datepicker.js?v=25"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>

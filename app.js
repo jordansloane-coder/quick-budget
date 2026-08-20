@@ -64,6 +64,11 @@
 
     reportModalOverlay: $('reportModalOverlay'), reportBody: $('reportBody'), printReportBtn: $('printReportBtn'),
     exportReportCsvBtn: $('exportReportCsvBtn'),
+
+    reportSetupOverlay: $('reportSetupOverlay'), generateReportBtn: $('generateReportBtn'),
+    reportTitleInput: $('reportTitleInput'), reportSubtitleInput: $('reportSubtitleInput'), reportDatesInput: $('reportDatesInput'),
+    preparerNameInput: $('preparerNameInput'), preparerCompanyInput: $('preparerCompanyInput'), preparerPhoneInput: $('preparerPhoneInput'),
+    clientNameInput: $('clientNameInput'), clientCompanyInput: $('clientCompanyInput'), clientPhoneInput: $('clientPhoneInput'),
     scanModalTitle: $('scanModalTitle'), scanChooseHint: $('scanChooseHint'), scanLoadingHint: $('scanLoadingHint'),
 
     travelInfoBtn: $('travelInfoBtn'), travelInfoOverlay: $('travelInfoOverlay'), travelInfoTitle: $('travelInfoTitle'),
@@ -93,6 +98,7 @@
 
   let scanPendingPhoto = null; // dataURL being scanned
   let currentReportContext = null; // { trip, expenses } for whatever the report modal is currently showing
+  let pendingReportContext = null; // { trip, expenses } awaiting cover-page details before the report itself opens
   let travelEditingId = null;    // id of the travel info entry being edited, null = new
   let travelPendingPhoto = null; // dataURL currently attached in the travel info form
   let travelPendingType = 'hotel';
@@ -772,7 +778,7 @@
       `;
       const openThisReport = () => {
         closeModal(el.settingsModalOverlay);
-        openReportModal(trip, tripExpenses);
+        openReportSetupModal(trip, tripExpenses);
       };
       li.querySelector('.past-trip-main').addEventListener('click', openThisReport);
       li.querySelector('.past-trip-amount').addEventListener('click', openThisReport);
@@ -822,7 +828,7 @@
     openModal(el.settingsModalOverlay);
   }
   el.settingsBtn.addEventListener('click', openSettingsModal);
-  el.menuBtn.addEventListener('click', () => openReportModal());
+  el.menuBtn.addEventListener('click', () => openReportSetupModal());
 
   el.countModeDownBtn.addEventListener('click', () => {
     pendingCountMode = 'countdown';
@@ -1156,25 +1162,103 @@
     if (container) container.innerHTML = renderReportItemsHtml(currentReportContext.expenses, reportSortMode);
   }
 
-  function openReportModal(trip = state.trip, expenses = activeExpenses()) {
+  function defaultReportDateRange(trip, expenses) {
+    const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    return trip.startDate
+      ? `${fmtLongDate(trip.startDate)}${trip.endDate ? ' – ' + fmtLongDate(trip.endDate) : ''}`
+      : sorted.length
+        ? `${fmtShortDate(sorted[0].date)} – ${fmtLongDate(sorted[sorted.length - 1].date)}`
+        : '';
+  }
+
+  // ---------- report cover page setup ----------
+  async function openReportSetupModal(trip = state.trip, expenses = activeExpenses()) {
+    pendingReportContext = { trip, expenses };
+
+    el.reportTitleInput.value = trip.reportTitle || trip.name || 'Trip Budget';
+    el.reportSubtitleInput.value = trip.reportSubtitle || '';
+    el.reportDatesInput.value = trip.reportDatesText || defaultReportDateRange(trip, expenses);
+
+    el.preparerNameInput.value = await DB.getMeta('preparerName', '');
+    el.preparerCompanyInput.value = await DB.getMeta('preparerCompany', '');
+    el.preparerPhoneInput.value = await DB.getMeta('preparerPhone', '');
+
+    el.clientNameInput.value = trip.clientName || '';
+    el.clientCompanyInput.value = trip.clientCompany || '';
+    el.clientPhoneInput.value = trip.clientPhone || '';
+
+    openModal(el.reportSetupOverlay);
+  }
+
+  el.generateReportBtn.addEventListener('click', async () => {
+    if (!pendingReportContext) return;
+    if (el.generateReportBtn.disabled) return;
+    el.generateReportBtn.disabled = true;
+    try {
+      const preparerName = el.preparerNameInput.value.trim();
+      const preparerCompany = el.preparerCompanyInput.value.trim();
+      const preparerPhone = el.preparerPhoneInput.value.trim();
+      await DB.setMeta('preparerName', preparerName);
+      await DB.setMeta('preparerCompany', preparerCompany);
+      await DB.setMeta('preparerPhone', preparerPhone);
+
+      const { trip, expenses } = pendingReportContext;
+      const updatedTrip = {
+        ...trip,
+        reportTitle: el.reportTitleInput.value.trim(),
+        reportSubtitle: el.reportSubtitleInput.value.trim(),
+        reportDatesText: el.reportDatesInput.value.trim(),
+        clientName: el.clientNameInput.value.trim(),
+        clientCompany: el.clientCompanyInput.value.trim(),
+        clientPhone: el.clientPhoneInput.value.trim(),
+      };
+      await DB.putTrip(updatedTrip);
+      if (updatedTrip.id === state.trip.id) state.trip = updatedTrip;
+      const idx = state.trips.findIndex((t) => t.id === updatedTrip.id);
+      if (idx >= 0) state.trips[idx] = updatedTrip;
+
+      closeModal(el.reportSetupOverlay);
+      openReportModal(updatedTrip, expenses, { preparerName, preparerCompany, preparerPhone });
+      pendingReportContext = null;
+    } finally {
+      el.generateReportBtn.disabled = false;
+    }
+  });
+
+  function openReportModal(trip = state.trip, expenses = activeExpenses(), preparer = null) {
     currentReportContext = { trip, expenses };
     reportSortMode = 'date';
 
     const spent = totalSpent(expenses);
     const budget = trip.budget || 0;
     const remaining = budget - spent;
-    const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-    const dateRange = trip.startDate
-      ? `${fmtLongDate(trip.startDate)}${trip.endDate ? ' – ' + fmtLongDate(trip.endDate) : ''}`
-      : sorted.length
-        ? `${fmtShortDate(sorted[0].date)} – ${fmtLongDate(sorted[sorted.length - 1].date)}`
-        : '';
+    const dateRange = trip.reportDatesText || defaultReportDateRange(trip, expenses);
+    const reportTitle = trip.reportTitle || trip.name || 'Trip Budget';
+
+    const partyHtml = (label, name, company, phone) => {
+      if (!name && !company && !phone) return '';
+      return `
+        <div class="report-party">
+          <div class="report-party-label">${escapeHtml(label)}</div>
+          ${name ? `<div class="report-party-name">${escapeHtml(name)}</div>` : ''}
+          ${company ? `<div>${escapeHtml(company)}</div>` : ''}
+          ${phone ? `<div>${escapeHtml(phone)}</div>` : ''}
+        </div>
+      `;
+    };
+    const preparedByHtml = preparer ? partyHtml('Prepared By', preparer.preparerName, preparer.preparerCompany, preparer.preparerPhone) : '';
+    const preparedForHtml = partyHtml('Prepared For', trip.clientName, trip.clientCompany, trip.clientPhone);
+    const partiesHtml = (preparedByHtml || preparedForHtml)
+      ? `<div class="report-parties">${preparedByHtml}${preparedForHtml}</div>`
+      : '';
 
     el.reportBody.innerHTML = `
       <div class="report-cover">
-        <h1>${escapeHtml(trip.name || 'Trip Budget')}</h1>
-        <div class="report-dates">${dateRange}</div>
+        <h1>${escapeHtml(reportTitle)}</h1>
+        ${trip.reportSubtitle ? `<div class="report-subtitle">${escapeHtml(trip.reportSubtitle)}</div>` : ''}
+        ${dateRange ? `<div class="report-dates">${escapeHtml(dateRange)}</div>` : ''}
+        ${partiesHtml}
       </div>
       <div class="report-summary">
         ${trip.countMode === 'countup' ? `
@@ -1218,7 +1302,7 @@
 
   $('exportReportBtn').addEventListener('click', () => {
     if (activeExpenses().length === 0) { showToast('No expenses to report yet.'); return; }
-    openReportModal();
+    openReportSetupModal();
   });
   el.printReportBtn.addEventListener('click', () => window.print());
 

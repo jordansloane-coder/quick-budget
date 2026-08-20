@@ -1176,6 +1176,8 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   #scanModalOverlay,
   #settingsModalOverlay,
   #datePickerOverlay,
+  #reportSetupOverlay,
+  #travelInfoOverlay,
   .toast {
     display: none !important;
   }
@@ -1204,7 +1206,7 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .report-body {
     overflow: visible !important;
     max-height: none !important;
-    padding: 0 !important;
+    padding: 0 28px !important;
   }
   .report-item { break-inside: avoid; }
 }

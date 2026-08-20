@@ -1179,9 +1179,12 @@
     el.reportSubtitleInput.value = trip.reportSubtitle || '';
     el.reportDatesInput.value = trip.reportDatesText || defaultReportDateRange(trip, expenses);
 
-    el.preparerNameInput.value = await DB.getMeta('preparerName', '');
-    el.preparerCompanyInput.value = await DB.getMeta('preparerCompany', '');
-    el.preparerPhoneInput.value = await DB.getMeta('preparerPhone', '');
+    // DB.getMeta's fallback only applies when the key was never saved — an empty string,
+    // once saved, would otherwise permanently shadow these defaults. Treat blank the same
+    // as unset so a cleared field always falls back to your real info next time.
+    el.preparerNameInput.value = (await DB.getMeta('preparerName', '')) || 'Jordan Sloane';
+    el.preparerCompanyInput.value = (await DB.getMeta('preparerCompany', '')) || 'Primary Source Media';
+    el.preparerPhoneInput.value = (await DB.getMeta('preparerPhone', '')) || '610-585-2390';
 
     el.clientNameInput.value = trip.clientName || '';
     el.clientCompanyInput.value = trip.clientCompany || '';

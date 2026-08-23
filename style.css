@@ -677,6 +677,38 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   border-color: var(--accent);
   color: #fff;
 }
+.category-chip.add-chip {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.add-category-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.add-category-row input {
+  flex: 1;
+  min-width: 0;
+}
+.add-category-row button {
+  padding: 7px 13px;
+  border-radius: 99px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.add-category-row #confirmAddCategoryBtn {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+.add-category-row #cancelAddCategoryBtn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
 
 .mode-toggle-row {
   display: flex;

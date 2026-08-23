@@ -36,7 +36,9 @@
 
     expenseModalOverlay: $('expenseModalOverlay'), expenseModalTitle: $('expenseModalTitle'),
     amountInput: $('amountInput'), vendorInput: $('vendorInput'), dateInput: $('dateInput'),
-    categoryInput: $('categoryInput'), categoryChipRow: $('categoryChipRow'), categoryDatalist: $('categoryDatalist'),
+    categoryInput: $('categoryInput'), categoryChipRow: $('categoryChipRow'),
+    addCategoryRow: $('addCategoryRow'), newCategoryInput: $('newCategoryInput'),
+    confirmAddCategoryBtn: $('confirmAddCategoryBtn'), cancelAddCategoryBtn: $('cancelAddCategoryBtn'),
     receiptPreviewWrap: $('receiptPreviewWrap'), receiptPreviewImg: $('receiptPreviewImg'),
     attachPhotoBtn: $('attachPhotoBtn'), removePhotoBtn: $('removePhotoBtn'), photoFileInput: $('photoFileInput'),
     excludeFromBudgetInput: $('excludeFromBudgetInput'), reimbursementInput: $('reimbursementInput'),
@@ -220,9 +222,22 @@
   }
 
   function allCategories() {
-    const used = activeExpenses().map((e) => e.category).filter(Boolean);
-    const set = new Set([...DEFAULT_CATEGORIES, ...used]);
+    const custom = state.trip.customCategories || [];
+    const set = new Set([...DEFAULT_CATEGORIES, ...custom]);
     return Array.from(set);
+  }
+
+  async function addCustomCategory(name) {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return null;
+    const exists = allCategories().some((c) => c.toLowerCase() === trimmed.toLowerCase());
+    if (exists) return trimmed;
+
+    state.trip.customCategories = [...(state.trip.customCategories || []), trimmed];
+    await DB.putTrip(state.trip);
+    const idx = state.trips.findIndex((t) => t.id === state.trip.id);
+    if (idx >= 0) state.trips[idx] = state.trip;
+    return trimmed;
   }
 
   // ---------- render ----------
@@ -416,7 +431,6 @@
   // ---------- expense modal ----------
   function renderCategoryChips(selected) {
     el.categoryChipRow.innerHTML = '';
-    el.categoryDatalist.innerHTML = '';
     for (const cat of allCategories()) {
       const chip = document.createElement('button');
       chip.type = 'button';
@@ -427,12 +441,33 @@
         renderCategoryChips(cat);
       });
       el.categoryChipRow.appendChild(chip);
-
-      const opt = document.createElement('option');
-      opt.value = cat;
-      el.categoryDatalist.appendChild(opt);
     }
+
+    const addChip = document.createElement('button');
+    addChip.type = 'button';
+    addChip.className = 'category-chip add-chip';
+    addChip.textContent = '+ Add';
+    addChip.addEventListener('click', () => {
+      el.addCategoryRow.style.display = 'flex';
+      el.newCategoryInput.value = '';
+      el.newCategoryInput.focus();
+    });
+    el.categoryChipRow.appendChild(addChip);
   }
+
+  el.confirmAddCategoryBtn.addEventListener('click', async () => {
+    const name = await addCustomCategory(el.newCategoryInput.value);
+    if (!name) return;
+    el.categoryInput.value = name;
+    el.addCategoryRow.style.display = 'none';
+    renderCategoryChips(name);
+  });
+  el.cancelAddCategoryBtn.addEventListener('click', () => {
+    el.addCategoryRow.style.display = 'none';
+  });
+  el.newCategoryInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); el.confirmAddCategoryBtn.click(); }
+  });
 
   function openExpenseModal(existing = null, prefill = null) {
     state.editingId = existing ? existing.id : null;
@@ -447,6 +482,7 @@
     el.vendorInput.value = source.vendor || '';
     el.dateInput.value = source.date || todayISO();
     el.categoryInput.value = source.category || '';
+    el.addCategoryRow.style.display = 'none';
     renderCategoryChips(source.category || '');
     el.excludeFromBudgetInput.checked = !!source.excludeFromBudget;
     el.reimbursementInput.checked = !!source.reimbursement;
@@ -968,6 +1004,7 @@
       name: '',
       budget: DEFAULT_BUDGET,
       perDiemRate: null,
+      customCategories: [],
       startDate: null,
       endDate: null,
       countMode: 'countdown',

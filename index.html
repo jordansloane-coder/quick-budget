@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=28">
+<link rel="stylesheet" href="style.css?v=29">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -137,8 +137,12 @@
       <div class="field">
         <span class="field-label">Category</span>
         <div class="category-chip-row" id="categoryChipRow"></div>
-        <input type="text" id="categoryInput" placeholder="Type a category…" list="categoryDatalist">
-        <datalist id="categoryDatalist"></datalist>
+        <div class="add-category-row" id="addCategoryRow" style="display:none;">
+          <input type="text" id="newCategoryInput" placeholder="New category name" maxlength="24">
+          <button type="button" id="confirmAddCategoryBtn">Add</button>
+          <button type="button" id="cancelAddCategoryBtn">Cancel</button>
+        </div>
+        <input type="hidden" id="categoryInput">
       </div>
 
       <label class="field">
@@ -487,9 +491,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=28"></script>
-<script src="claude.js?v=28"></script>
-<script src="datepicker.js?v=28"></script>
-<script src="app.js?v=28"></script>
+<script src="db.js?v=29"></script>
+<script src="claude.js?v=29"></script>
+<script src="datepicker.js?v=29"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

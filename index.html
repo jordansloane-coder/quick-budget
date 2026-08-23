@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=27">
+<link rel="stylesheet" href="style.css?v=28">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -99,6 +99,7 @@
   <footer class="footer-actions">
     <button class="text-btn" id="exportCsvBtn">Export CSV</button>
     <button class="text-btn" id="exportReportBtn">Export Report</button>
+    <button class="text-btn" id="bankTripBtn">💾 Bank Trip</button>
   </footer>
 </div>
 
@@ -257,16 +258,15 @@
         <p class="field-help">Countdown shows what's left to spend — good for a work trip with a hard budget. Count up totals what you've spent so far — good for a vacation with no strict limit.</p>
       </div>
 
-      <div class="field">
+      <div class="field" style="margin-bottom:0;">
         <span class="field-label">Travel Info <span class="field-optional">(optional)</span></span>
         <button type="button" class="secondary-btn date-picker-btn" id="travelInfoBtn">✈️ Hotel, flight &amp; car rental info</button>
       </div>
 
-      <label class="field">
-        <span class="field-label">Anthropic API key <span class="field-optional">(optional — enables receipt scanning)</span></span>
-        <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
-        <p class="field-help">Stored only on this device. Get a key at <span class="mono">console.anthropic.com</span>. This is separate from your claude.ai subscription and is billed pay-as-you-go (a receipt scan costs a small fraction of a cent).</p>
-      </label>
+      <div class="settings-section" id="pastTripsSection">
+        <span class="field-label section-label">Past Trips</span>
+        <ul id="pastTripsList" class="past-trips-list"></ul>
+      </div>
 
       <div class="settings-section">
         <span class="field-label section-label">Backup</span>
@@ -285,51 +285,16 @@
       </div>
 
       <div class="settings-section">
-        <button type="button" class="secondary-btn" id="startNewTripBtn">💾 Save &amp; Bank Trip</button>
-        <div id="newTripForm" class="new-trip-form" style="display:none;">
-          <p class="field-help" id="bankSummaryText"></p>
-          <label class="field">
-            <span class="field-label">New trip name</span>
-            <input type="text" id="newTripNameInput" placeholder="e.g. Savannah Reshoot">
-          </label>
-          <div class="field">
-            <span class="field-label">Trip dates <span class="field-optional">(optional)</span></span>
-            <button type="button" class="secondary-btn date-picker-btn" id="newTripDatesBtn">📅 Set trip dates</button>
-          </div>
-          <label class="field" id="newTripBudgetField">
-            <span class="field-label">Starting budget</span>
-            <div class="amount-input-wrap">
-              <span class="dollar-sign">$</span>
-              <input type="number" inputmode="decimal" step="0.01" min="0" id="newTripBudgetInput" placeholder="0">
-            </div>
-          </label>
-          <label class="field">
-            <span class="field-label">Per diem <span class="field-optional">(optional)</span></span>
-            <div class="amount-input-wrap">
-              <span class="dollar-sign">$</span>
-              <input type="number" inputmode="decimal" step="0.01" min="0" id="newPerDiemInput" placeholder="e.g. 75">
-            </div>
-          </label>
-          <div class="field">
-            <span class="field-label">Budget display</span>
-            <div class="mode-toggle-row" id="newCountModeRow">
-              <button type="button" class="mode-toggle-btn" data-mode="countdown" id="newCountModeDownBtn">⬇️ Countdown</button>
-              <button type="button" class="mode-toggle-btn" data-mode="countup" id="newCountModeUpBtn">⬆️ Count up</button>
-            </div>
-          </div>
-          <div class="photo-row">
-            <button type="button" class="secondary-btn" id="cancelNewTripBtn">Cancel</button>
-            <button type="button" class="primary-btn" id="confirmNewTripBtn">Bank &amp; Start</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section" id="pastTripsSection">
-        <span class="field-label">Past trips</span>
-        <ul id="pastTripsList" class="past-trips-list"></ul>
+        <span class="field-label section-label">Anthropic API Key</span>
+        <label class="field" style="margin-bottom:0;">
+          <span class="field-label">Key <span class="field-optional">(optional — enables receipt scanning)</span></span>
+          <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
+          <p class="field-help">Stored only on this device. Get a key at <span class="mono">console.anthropic.com</span>. This is separate from your claude.ai subscription and is billed pay-as-you-go (a receipt scan costs a small fraction of a cent).</p>
+        </label>
       </div>
 
       <div class="danger-zone">
+        <span class="field-label section-label danger-label">Danger Zone</span>
         <button class="secondary-btn danger-text" id="resetAllBtn" style="width:100%;">Clear this trip's expenses</button>
         <button class="secondary-btn" id="loadSampleBtn" style="width:100%;margin-top:8px;">🧪 Load sample data (for testing)</button>
       </div>
@@ -522,9 +487,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=27"></script>
-<script src="claude.js?v=27"></script>
-<script src="datepicker.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="db.js?v=28"></script>
+<script src="claude.js?v=28"></script>
+<script src="datepicker.js?v=28"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>

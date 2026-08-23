@@ -55,11 +55,7 @@
     apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
     resetAllBtn: $('resetAllBtn'), loadSampleBtn: $('loadSampleBtn'), tripDatesBtn: $('tripDatesBtn'),
     countModeDownBtn: $('countModeDownBtn'), countModeUpBtn: $('countModeUpBtn'),
-    startNewTripBtn: $('startNewTripBtn'), newTripForm: $('newTripForm'), bankSummaryText: $('bankSummaryText'),
-    newTripNameInput: $('newTripNameInput'), newTripBudgetInput: $('newTripBudgetInput'), newTripBudgetField: $('newTripBudgetField'), newTripDatesBtn: $('newTripDatesBtn'),
-    newPerDiemInput: $('newPerDiemInput'),
-    newCountModeDownBtn: $('newCountModeDownBtn'), newCountModeUpBtn: $('newCountModeUpBtn'),
-    cancelNewTripBtn: $('cancelNewTripBtn'), confirmNewTripBtn: $('confirmNewTripBtn'),
+    bankTripBtn: $('bankTripBtn'),
     pastTripsSection: $('pastTripsSection'), pastTripsList: $('pastTripsList'),
 
     reportModalOverlay: $('reportModalOverlay'), reportBody: $('reportBody'), printReportBtn: $('printReportBtn'),
@@ -111,9 +107,7 @@
     other: { emoji: '📌', label: 'Other', nameLabel: 'Name', addressLabel: 'Address / Location', startLabel: 'Start', endLabel: 'End' },
   };
   let pendingTripDates = { start: null, end: null };    // being edited for the active trip, in Settings
-  let pendingNewTripDates = { start: null, end: null }; // being set for the trip about to be started
   let pendingCountMode = 'countdown';    // being edited for the active trip, in Settings
-  let pendingNewCountMode = 'countdown'; // being set for the trip about to be started
 
   // ---------- utils ----------
   const fmtMoney = (n) => `$${(Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -819,7 +813,6 @@
     el.budgetInput.value = state.trip.budget != null ? state.trip.budget : '';
     el.perDiemInput.value = state.trip.perDiemRate != null ? state.trip.perDiemRate : '';
     el.apiKeyInput.value = state.settings.apiKey || '';
-    el.newTripForm.style.display = 'none';
     pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
     el.tripDatesBtn.textContent = dateRangeLabel(pendingTripDates.start, pendingTripDates.end);
     pendingCountMode = state.trip.countMode === 'countup' ? 'countup' : 'countdown';
@@ -839,15 +832,6 @@
     pendingCountMode = 'countup';
     renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode, el.budgetField);
   });
-  el.newCountModeDownBtn.addEventListener('click', () => {
-    pendingNewCountMode = 'countdown';
-    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode, el.newTripBudgetField);
-  });
-  el.newCountModeUpBtn.addEventListener('click', () => {
-    pendingNewCountMode = 'countup';
-    renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode, el.newTripBudgetField);
-  });
-
   el.tripDatesBtn.addEventListener('click', () => {
     DatePicker.open({
       start: pendingTripDates.start,
@@ -855,17 +839,6 @@
       onDone: ({ start, end }) => {
         pendingTripDates = { start, end };
         el.tripDatesBtn.textContent = dateRangeLabel(start, end);
-      },
-    });
-  });
-
-  el.newTripDatesBtn.addEventListener('click', () => {
-    DatePicker.open({
-      start: pendingNewTripDates.start,
-      end: pendingNewTripDates.end,
-      onDone: ({ start, end }) => {
-        pendingNewTripDates = { start, end };
-        el.newTripDatesBtn.textContent = dateRangeLabel(start, end);
       },
     });
   });
@@ -975,61 +948,29 @@
     showToast('Sample expenses added — try Export Report');
   });
 
-  // ---------- save & bank trip, then start new ----------
-  el.startNewTripBtn.addEventListener('click', () => {
-    const opening = el.newTripForm.style.display === 'none';
-    el.newTripForm.style.display = opening ? '' : 'none';
-    if (opening) {
-      el.newTripNameInput.value = '';
-      el.newTripBudgetInput.value = state.trip.budget || '';
-      el.newPerDiemInput.value = state.trip.perDiemRate || '';
-      pendingNewTripDates = { start: null, end: null };
-      el.newTripDatesBtn.textContent = dateRangeLabel(null, null);
-      pendingNewCountMode = 'countdown';
-      renderCountModeToggle(el.newCountModeDownBtn, el.newCountModeUpBtn, pendingNewCountMode, el.newTripBudgetField);
-      const bankedBudgetText = state.trip.countMode === 'countup' ? fmtMoney(totalSpent()) : `${fmtMoney(totalSpent())} of ${fmtMoney(state.trip.budget)}`;
-      el.bankSummaryText.textContent = `Saves your edits above, banks "${state.trip.name}" (${bankedBudgetText}) into Past Trips, then starts a fresh trip with what you enter below.`;
-      setTimeout(() => el.newTripNameInput.focus(), 150);
-    }
-  });
-  el.cancelNewTripBtn.addEventListener('click', () => { el.newTripForm.style.display = 'none'; });
+  // ---------- bank current trip, then reset to a fresh blank one ----------
+  // Lives on the main screen (next to Export), not buried in Settings — banking
+  // no longer asks any new-trip questions up front. It just archives the current
+  // trip as-is and resets to a blank slate; the new trip gets named/configured
+  // whenever you're ready, in Settings' existing "Current Trip" section.
+  el.bankTripBtn.addEventListener('click', async () => {
+    const spentText = state.trip.countMode === 'countup'
+      ? fmtMoney(totalSpent())
+      : `${fmtMoney(totalSpent())} of ${fmtMoney(state.trip.budget)}`;
+    const label = state.trip.name || 'Trip Budget';
+    if (!confirm(`Bank "${label}" (${spentText}) and start fresh? Nothing is deleted — find it later under Past Trips in Settings.`)) return;
 
-  el.confirmNewTripBtn.addEventListener('click', async () => {
-    // No name yet is fine — you're often closing out a finished trip without
-    // knowing the next one's name yet. Falls back to a generic default you can
-    // rename later in Settings whenever the next trip actually comes up.
-    const name = el.newTripNameInput.value.trim() || 'Trip Budget';
-    const newBudget = parseFloat(el.newTripBudgetInput.value);
-    const finalBudget = isNaN(newBudget) ? DEFAULT_BUDGET : newBudget;
-    const newPerDiemRate = parseFloat(el.newPerDiemInput.value);
-
-    // "Save & Bank Trip" also saves whatever's currently in the Current Trip / API key
-    // fields, so nothing typed this session is lost when the trip gets archived.
-    const currentBudget = parseFloat(el.budgetInput.value);
-    const currentPerDiemRate = parseFloat(el.perDiemInput.value);
-    state.settings.apiKey = el.apiKeyInput.value.trim();
-    await DB.setMeta('apiKey', state.settings.apiKey);
-
-    const archivedTrip = {
-      ...state.trip,
-      name: el.tripNameInput.value.trim() || state.trip.name,
-      budget: isNaN(currentBudget) ? state.trip.budget : currentBudget,
-      perDiemRate: isNaN(currentPerDiemRate) ? state.trip.perDiemRate : currentPerDiemRate,
-      startDate: pendingTripDates.start,
-      endDate: pendingTripDates.end,
-      countMode: pendingCountMode,
-      archivedAt: Date.now(),
-    };
+    const archivedTrip = { ...state.trip, archivedAt: Date.now() };
     await DB.putTrip(archivedTrip);
 
     const newTrip = {
       id: uid(),
-      name,
-      budget: finalBudget,
-      perDiemRate: isNaN(newPerDiemRate) ? null : newPerDiemRate,
-      startDate: pendingNewTripDates.start,
-      endDate: pendingNewTripDates.end,
-      countMode: pendingNewCountMode,
+      name: '',
+      budget: DEFAULT_BUDGET,
+      perDiemRate: null,
+      startDate: null,
+      endDate: null,
+      countMode: 'countdown',
       createdAt: Date.now(),
       archivedAt: null,
     };
@@ -1041,10 +982,8 @@
     state.trips.push(newTrip);
     state.trip = newTrip;
 
-    el.newTripForm.style.display = 'none';
-    closeModal(el.settingsModalOverlay);
     renderAll();
-    showToast(`Banked "${archivedTrip.name}". Started "${newTrip.name}".`);
+    showToast(`Banked "${label}". Fresh trip ready — set it up in Settings whenever you like.`);
   });
 
   // ---------- export: CSV ----------

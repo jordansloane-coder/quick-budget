@@ -537,8 +537,9 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 /* ============ FOOTER ============ */
 .footer-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 26px;
+  gap: 10px 22px;
   padding: 14px 20px 6px;
 }
 .text-btn {
@@ -822,12 +823,9 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   display: block;
   margin-bottom: 4px;
 }
-
-.new-trip-form {
-  margin-top: 16px;
-}
-.new-trip-form .field-help {
-  margin: 0 0 14px;
+.danger-label {
+  color: var(--bad);
+  margin-bottom: 12px;
 }
 
 .past-trips-list {

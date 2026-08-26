@@ -78,6 +78,11 @@
     exportReportCsvBtn: $('exportReportCsvBtn'),
 
     reportSetupOverlay: $('reportSetupOverlay'), generateReportBtn: $('generateReportBtn'),
+    setupExportCsvBtn: $('setupExportCsvBtn'),
+    reportIncludeReimbursementInput: $('reportIncludeReimbursementInput'),
+    reportIncludeCompanyInput: $('reportIncludeCompanyInput'),
+    reportIncludeOtherInput: $('reportIncludeOtherInput'),
+    reportIncludePreview: $('reportIncludePreview'),
     reportTitleInput: $('reportTitleInput'), reportSubtitleInput: $('reportSubtitleInput'), reportDatesInput: $('reportDatesInput'),
     reportShowSummaryInput: $('reportShowSummaryInput'), reportShowBreakdownInput: $('reportShowBreakdownInput'),
     preparerNameInput: $('preparerNameInput'), preparerCompanyInput: $('preparerCompanyInput'), preparerPhoneInput: $('preparerPhoneInput'),
@@ -1266,7 +1271,10 @@
     showToast('CSV downloaded');
   }
 
-  $('exportCsvBtn').addEventListener('click', () => exportCsv());
+  $('exportCsvBtn').addEventListener('click', () => {
+    if (activeExpenses().length === 0) { showToast('No expenses to export yet.'); return; }
+    openReportSetupModal();
+  });
   el.exportReportCsvBtn.addEventListener('click', () => {
     if (currentReportContext) exportCsv(currentReportContext.trip, currentReportContext.expenses);
   });
@@ -1354,8 +1362,43 @@
   }
 
   // ---------- report cover page setup ----------
+  function expenseIncludeBucket(e) {
+    if (e.reimbursement) return 'reimbursement';
+    if (e.companyExpense) return 'company';
+    return 'other';
+  }
+
+  function filteredSetupExpenses() {
+    if (!pendingReportContext) return [];
+    const include = {
+      reimbursement: el.reportIncludeReimbursementInput.checked,
+      company: el.reportIncludeCompanyInput.checked,
+      other: el.reportIncludeOtherInput.checked,
+    };
+    return pendingReportContext.expenses.filter((e) => include[expenseIncludeBucket(e)]);
+  }
+
+  function updateReportIncludePreview() {
+    if (!pendingReportContext) return;
+    const all = pendingReportContext.expenses;
+    const filtered = filteredSetupExpenses();
+    const total = filtered.reduce((sum, e) => sum + e.amount, 0);
+    el.reportIncludePreview.textContent = filtered.length === all.length
+      ? `All ${all.length} expense${all.length === 1 ? '' : 's'} · ${fmtMoney(total)}`
+      : `${filtered.length} of ${all.length} expenses included · ${fmtMoney(total)}`;
+  }
+
+  [el.reportIncludeReimbursementInput, el.reportIncludeCompanyInput, el.reportIncludeOtherInput].forEach((cb) => {
+    cb.addEventListener('change', updateReportIncludePreview);
+  });
+
   async function openReportSetupModal(trip = state.trip, expenses = activeExpenses()) {
     pendingReportContext = { trip, expenses };
+
+    el.reportIncludeReimbursementInput.checked = true;
+    el.reportIncludeCompanyInput.checked = true;
+    el.reportIncludeOtherInput.checked = true;
+    updateReportIncludePreview();
 
     el.reportTitleInput.value = trip.reportTitle || trip.name || 'Trip Budget';
     el.reportSubtitleInput.value = trip.reportSubtitle || '';
@@ -1377,6 +1420,15 @@
     openModal(el.reportSetupOverlay);
   }
 
+  el.setupExportCsvBtn.addEventListener('click', () => {
+    if (!pendingReportContext) return;
+    const filtered = filteredSetupExpenses();
+    if (filtered.length === 0) { showToast('No expenses match what\'s checked above.'); return; }
+    exportCsv(pendingReportContext.trip, filtered);
+    closeModal(el.reportSetupOverlay);
+    pendingReportContext = null;
+  });
+
   el.generateReportBtn.addEventListener('click', async () => {
     if (!pendingReportContext) return;
     if (el.generateReportBtn.disabled) return;
@@ -1389,7 +1441,9 @@
       await DB.setMeta('preparerCompany', preparerCompany);
       await DB.setMeta('preparerPhone', preparerPhone);
 
-      const { trip, expenses } = pendingReportContext;
+      const { trip } = pendingReportContext;
+      const expenses = filteredSetupExpenses();
+      if (expenses.length === 0) { showToast('No expenses match what\'s checked above.'); return; }
       const updatedTrip = {
         ...trip,
         reportTitle: el.reportTitleInput.value.trim(),

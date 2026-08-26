@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=32">
+<link rel="stylesheet" href="style.css?v=33">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -399,10 +399,25 @@
 <div class="modal-overlay" id="reportSetupOverlay">
   <div class="modal" id="reportSetupModal">
     <div class="modal-header">
-      <h3>Report Cover Page</h3>
+      <h3>Export Options</h3>
       <button class="icon-btn" data-close="reportSetupOverlay">✕</button>
     </div>
     <div class="modal-body">
+      <span class="field-label section-label">Include</span>
+      <label class="checkbox-row">
+        <input type="checkbox" id="reportIncludeReimbursementInput" checked>
+        <span>Reimbursement <span class="field-optional">(billed to the client)</span></span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="reportIncludeCompanyInput" checked>
+        <span>Company Expense <span class="field-optional">(your own cost, not billed to the client)</span></span>
+      </label>
+      <label class="checkbox-row" style="margin-bottom:8px;">
+        <input type="checkbox" id="reportIncludeOtherInput" checked>
+        <span>Other <span class="field-optional">(not tagged either way)</span></span>
+      </label>
+      <p class="field-help" id="reportIncludePreview" style="margin-bottom:16px;"></p>
+
       <span class="field-label section-label">Report</span>
       <label class="field">
         <span class="field-label">Title</span>
@@ -455,7 +470,8 @@
       </label>
     </div>
     <div class="modal-footer">
-      <button class="primary-btn" id="generateReportBtn">Generate Report</button>
+      <button class="secondary-btn" id="setupExportCsvBtn">Export CSV</button>
+      <button class="primary-btn" id="generateReportBtn">Generate Report (PDF)</button>
     </div>
   </div>
 </div>
@@ -577,9 +593,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=32"></script>
-<script src="claude.js?v=32"></script>
-<script src="datepicker.js?v=32"></script>
-<script src="app.js?v=32"></script>
+<script src="db.js?v=33"></script>
+<script src="claude.js?v=33"></script>
+<script src="datepicker.js?v=33"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>

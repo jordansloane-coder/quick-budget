@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const DEFAULT_CATEGORIES = ['Food', 'Groceries', 'Gas', 'Lodging', 'Supplies', 'Transport', 'Other'];
+  const DEFAULT_CATEGORIES = ['Food', 'Groceries', 'Gas', 'Lodging', 'Supplies', 'Transport', 'Mileage', 'Other'];
   const DEFAULT_BUDGET = 0;
   const MAX_IMAGE_DIM = 1400;
 
@@ -30,6 +30,7 @@
     reimbursementFilterBtn: $('reimbursementFilterBtn'),
     reimbursementTotalBar: $('reimbursementTotalBar'), reimbursementTotalAmount: $('reimbursementTotalAmount'),
     addBtn: $('addBtn'), scanBtn: $('scanBtn'), menuBtn: $('menuBtn'), settingsBtn: $('settingsBtn'),
+    mileageQuickAddWrap: $('mileageQuickAddWrap'), mileageBtn: $('mileageBtn'),
 
     checklistToggle: $('checklistToggle'), checklistBody: $('checklistBody'), checklistCount: $('checklistCount'),
     checklistInput: $('checklistInput'), checklistAddBtn: $('checklistAddBtn'), checklistList: $('checklistList'),
@@ -52,8 +53,19 @@
     scanLoadingImg: $('scanLoadingImg'), scanErrorText: $('scanErrorText'), scanErrorManualBtn: $('scanErrorManualBtn'),
     scanNoKeyNote: $('scanNoKeyNote'), scanNoKeySettingsLink: $('scanNoKeySettingsLink'),
 
+    mileageModalOverlay: $('mileageModalOverlay'), mileageDateInput: $('mileageDateInput'),
+    mileageMethodManualBtn: $('mileageMethodManualBtn'), mileageMethodPhotoBtn: $('mileageMethodPhotoBtn'),
+    mileagePhotoSection: $('mileagePhotoSection'), mileageMilesInput: $('mileageMilesInput'),
+    mileageBeforePhotoBtn: $('mileageBeforePhotoBtn'), mileageBeforeRemoveBtn: $('mileageBeforeRemoveBtn'),
+    mileageBeforePhotoInput: $('mileageBeforePhotoInput'), mileageBeforePreviewImg: $('mileageBeforePreviewImg'),
+    mileageAfterPhotoBtn: $('mileageAfterPhotoBtn'), mileageAfterRemoveBtn: $('mileageAfterRemoveBtn'),
+    mileageAfterPhotoInput: $('mileageAfterPhotoInput'), mileageAfterPreviewImg: $('mileageAfterPreviewImg'),
+    mileageReadBtn: $('mileageReadBtn'), mileageReadBtnLabel: $('mileageReadBtnLabel'), mileageReadError: $('mileageReadError'),
+    mileageAmountPreview: $('mileageAmountPreview'), mileageSaveBtn: $('mileageSaveBtn'),
+
     settingsModalOverlay: $('settingsModalOverlay'), tripNameInput: $('tripNameInput'),
     budgetInput: $('budgetInput'), budgetField: $('budgetField'), perDiemInput: $('perDiemInput'),
+    mileageEnabledInput: $('mileageEnabledInput'), mileageRateField: $('mileageRateField'), mileageRateInput: $('mileageRateInput'),
     apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
     resetAllBtn: $('resetAllBtn'), loadSampleBtn: $('loadSampleBtn'), tripDatesBtn: $('tripDatesBtn'),
     countModeDownBtn: $('countModeDownBtn'), countModeUpBtn: $('countModeUpBtn'),
@@ -96,6 +108,9 @@
   };
 
   let scanPendingPhoto = null; // dataURL being scanned
+  let mileageMethod = 'manual';  // 'manual' or 'photo' — which input method is showing in the mileage modal
+  let mileagePendingBefore = null; // dataURL of the "before" odometer photo
+  let mileagePendingAfter = null;  // dataURL of the "after" odometer photo
   let currentReportContext = null; // { trip, expenses } for whatever the report modal is currently showing
   let pendingReportContext = null; // { trip, expenses } awaiting cover-page details before the report itself opens
   let travelEditingId = null;    // id of the travel info entry being edited, null = new
@@ -278,6 +293,7 @@
     }
 
     renderPerDiem();
+    el.mileageQuickAddWrap.style.display = state.trip.mileageEnabled ? '' : 'none';
 
     el.bigNumber.classList.add('pulse');
     setTimeout(() => el.bigNumber.classList.remove('pulse'), 280);
@@ -299,7 +315,7 @@
     el.perDiemSub.textContent = `${fmtMoney(spentToday)} of ${fmtMoney(rate)}/day`;
   }
 
-  const CATEGORY_EMOJI = { Food: '🍔', Groceries: '🛒', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Other: '🧾' };
+  const CATEGORY_EMOJI = { Food: '🍔', Groceries: '🛒', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Mileage: '🛣️', Other: '🧾' };
 
   function renderList() {
     const all = activeExpenses();
@@ -614,6 +630,157 @@
     await DB.putExpense(expense);
   }
 
+  // ---------- mileage modal ----------
+  function renderMileageMethod() {
+    el.mileageMethodManualBtn.classList.toggle('selected', mileageMethod === 'manual');
+    el.mileageMethodPhotoBtn.classList.toggle('selected', mileageMethod === 'photo');
+    el.mileagePhotoSection.style.display = mileageMethod === 'photo' ? '' : 'none';
+  }
+
+  function updateMileageAmountPreview() {
+    const miles = parseFloat(el.mileageMilesInput.value);
+    const rate = state.trip.mileageRate || 0;
+    const amount = (!isNaN(miles) && miles > 0) ? miles * rate : 0;
+    el.mileageAmountPreview.textContent = `${fmtMoney(amount)} · ${!isNaN(miles) ? miles : 0} mi @ ${fmtMoney(rate)}/mi`;
+  }
+
+  function resetMileageModal() {
+    mileageMethod = 'manual';
+    mileagePendingBefore = null;
+    mileagePendingAfter = null;
+    el.mileageDateInput.value = todayISO();
+    el.mileageMilesInput.value = '';
+    el.mileageBeforePreviewImg.style.display = 'none';
+    el.mileageBeforeRemoveBtn.style.display = 'none';
+    el.mileageAfterPreviewImg.style.display = 'none';
+    el.mileageAfterRemoveBtn.style.display = 'none';
+    el.mileageReadError.style.display = 'none';
+    el.mileageReadBtnLabel.textContent = 'Read odometer photos';
+    el.mileageReadBtn.disabled = false;
+    renderMileageMethod();
+    updateMileageAmountPreview();
+  }
+
+  el.mileageBtn.addEventListener('click', () => {
+    resetMileageModal();
+    openModal(el.mileageModalOverlay);
+  });
+
+  el.mileageMethodManualBtn.addEventListener('click', () => { mileageMethod = 'manual'; renderMileageMethod(); });
+  el.mileageMethodPhotoBtn.addEventListener('click', () => { mileageMethod = 'photo'; renderMileageMethod(); });
+  el.mileageMilesInput.addEventListener('input', updateMileageAmountPreview);
+
+  el.mileageBeforePhotoBtn.addEventListener('click', () => el.mileageBeforePhotoInput.click());
+  el.mileageBeforePhotoInput.addEventListener('change', async () => {
+    const file = el.mileageBeforePhotoInput.files[0];
+    el.mileageBeforePhotoInput.value = '';
+    if (!file) return;
+    try {
+      mileagePendingBefore = await downscaleImage(await fileToDataUrl(file));
+      el.mileageBeforePreviewImg.src = mileagePendingBefore;
+      el.mileageBeforePreviewImg.style.display = '';
+      el.mileageBeforeRemoveBtn.style.display = '';
+    } catch (e) {
+      showToast(e.message || 'Could not attach that photo.');
+    }
+  });
+  el.mileageBeforeRemoveBtn.addEventListener('click', () => {
+    mileagePendingBefore = null;
+    el.mileageBeforePreviewImg.style.display = 'none';
+    el.mileageBeforeRemoveBtn.style.display = 'none';
+  });
+
+  el.mileageAfterPhotoBtn.addEventListener('click', () => el.mileageAfterPhotoInput.click());
+  el.mileageAfterPhotoInput.addEventListener('change', async () => {
+    const file = el.mileageAfterPhotoInput.files[0];
+    el.mileageAfterPhotoInput.value = '';
+    if (!file) return;
+    try {
+      mileagePendingAfter = await downscaleImage(await fileToDataUrl(file));
+      el.mileageAfterPreviewImg.src = mileagePendingAfter;
+      el.mileageAfterPreviewImg.style.display = '';
+      el.mileageAfterRemoveBtn.style.display = '';
+    } catch (e) {
+      showToast(e.message || 'Could not attach that photo.');
+    }
+  });
+  el.mileageAfterRemoveBtn.addEventListener('click', () => {
+    mileagePendingAfter = null;
+    el.mileageAfterPreviewImg.style.display = 'none';
+    el.mileageAfterRemoveBtn.style.display = 'none';
+  });
+
+  el.mileageReadBtn.addEventListener('click', async () => {
+    if (!mileagePendingBefore || !mileagePendingAfter) {
+      showToast('Attach both odometer photos first.');
+      return;
+    }
+    if (!state.settings.apiKey) {
+      el.mileageReadError.textContent = 'No Anthropic API key set — add one in Settings, or type the total miles above instead.';
+      el.mileageReadError.style.display = '';
+      return;
+    }
+    el.mileageReadError.style.display = 'none';
+    el.mileageReadBtn.disabled = true;
+    el.mileageReadBtnLabel.textContent = 'Reading…';
+    try {
+      const { before, after } = await ClaudeReceipts.parseOdometerPair(mileagePendingBefore, mileagePendingAfter, state.settings.apiKey);
+      if (before == null || after == null || after <= before) {
+        el.mileageReadError.textContent = 'Could not read both odometers clearly — enter the total miles manually.';
+        el.mileageReadError.style.display = '';
+      } else {
+        el.mileageMilesInput.value = Math.round((after - before) * 10) / 10;
+        updateMileageAmountPreview();
+        showToast(`Read ${(after - before).toFixed(1)} miles (${before} → ${after})`);
+      }
+    } catch (e) {
+      el.mileageReadError.textContent = e.message || 'Could not read those photos — enter the total miles manually.';
+      el.mileageReadError.style.display = '';
+    } finally {
+      el.mileageReadBtn.disabled = false;
+      el.mileageReadBtnLabel.textContent = 'Read odometer photos';
+    }
+  });
+
+  el.mileageSaveBtn.addEventListener('click', async () => {
+    if (el.mileageSaveBtn.disabled) return;
+    const miles = parseFloat(el.mileageMilesInput.value);
+    if (!miles || miles <= 0) { showToast('Enter a total miles greater than 0.'); el.mileageMilesInput.focus(); return; }
+    const rate = state.trip.mileageRate || 0;
+    if (!rate) { showToast('Set a mileage rate in Settings first.'); return; }
+
+    el.mileageSaveBtn.disabled = true;
+    try {
+      const amount = Math.round(miles * rate * 100) / 100;
+      const expense = {
+        id: uid(),
+        tripId: state.trip.id,
+        amount,
+        vendor: 'Mileage',
+        category: 'Mileage',
+        date: el.mileageDateInput.value || todayISO(),
+        miles,
+        mileageRateUsed: rate,
+        photo: mileageMethod === 'photo' ? mileagePendingBefore : null,
+        photo2: mileageMethod === 'photo' ? mileagePendingAfter : null,
+        address: null,
+        excludeFromBudget: false,
+        reimbursement: false,
+        perDiem: false,
+        createdAt: Date.now(),
+      };
+
+      await DB.putExpense(expense);
+      state.allExpenses.unshift(expense);
+
+      closeModal(el.mileageModalOverlay);
+      renderAll();
+      showToast(`Logged ${fmtMoney(amount)} for ${miles} miles`);
+    } finally {
+      el.mileageSaveBtn.disabled = false;
+    }
+  });
+
   // ---------- scan flow (shared by receipt scanning and travel document reading) ----------
   // scanMode: 'expense' reads a receipt into the expense form. 'travel' reads a travel
   // document (hotel/flight/car/etc.) into the travel info form.
@@ -848,6 +1015,9 @@
     el.tripNameInput.value = state.trip.name || '';
     el.budgetInput.value = state.trip.budget != null ? state.trip.budget : '';
     el.perDiemInput.value = state.trip.perDiemRate != null ? state.trip.perDiemRate : '';
+    el.mileageEnabledInput.checked = !!state.trip.mileageEnabled;
+    el.mileageRateField.style.display = state.trip.mileageEnabled ? '' : 'none';
+    el.mileageRateInput.value = state.trip.mileageRate != null ? state.trip.mileageRate : '';
     el.apiKeyInput.value = state.settings.apiKey || '';
     pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
     el.tripDatesBtn.textContent = dateRangeLabel(pendingTripDates.start, pendingTripDates.end);
@@ -868,6 +1038,9 @@
     pendingCountMode = 'countup';
     renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode, el.budgetField);
   });
+  el.mileageEnabledInput.addEventListener('change', () => {
+    el.mileageRateField.style.display = el.mileageEnabledInput.checked ? '' : 'none';
+  });
   el.tripDatesBtn.addEventListener('click', () => {
     DatePicker.open({
       start: pendingTripDates.start,
@@ -882,11 +1055,14 @@
   el.saveSettingsBtn.addEventListener('click', async () => {
     const budget = parseFloat(el.budgetInput.value);
     const perDiemRate = parseFloat(el.perDiemInput.value);
+    const mileageRate = parseFloat(el.mileageRateInput.value);
     const updatedTrip = {
       ...state.trip,
       name: el.tripNameInput.value.trim() || 'Trip Budget',
       budget: isNaN(budget) ? DEFAULT_BUDGET : budget,
       perDiemRate: isNaN(perDiemRate) ? null : perDiemRate,
+      mileageEnabled: el.mileageEnabledInput.checked,
+      mileageRate: isNaN(mileageRate) ? null : mileageRate,
       startDate: pendingTripDates.start,
       endDate: pendingTripDates.end,
       countMode: pendingCountMode,
@@ -1004,6 +1180,8 @@
       name: '',
       budget: DEFAULT_BUDGET,
       perDiemRate: null,
+      mileageEnabled: false,
+      mileageRate: null,
       customCategories: [],
       startDate: null,
       endDate: null,
@@ -1039,27 +1217,27 @@
 
   function exportCsv(trip = state.trip, expenses = activeExpenses()) {
     if (expenses.length === 0) { showToast('No expenses to export yet.'); return; }
-    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Reimbursement', 'Per Diem', 'Location', 'Has Photo']];
+    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Reimbursement', 'Per Diem', 'Location', 'Has Photo', 'Miles']];
     const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     for (const e of sorted) {
-      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', e.reimbursement ? 'Yes' : 'No', e.perDiem ? 'Yes' : 'No', locationLabel(e), e.photo ? 'Yes' : 'No']);
+      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', e.reimbursement ? 'Yes' : 'No', e.perDiem ? 'Yes' : 'No', locationLabel(e), e.photo ? 'Yes' : 'No', e.miles != null ? e.miles : '']);
     }
     const spent = totalSpent(expenses);
     const reimbursementTotal = expenses.filter((e) => e.reimbursement).reduce((sum, e) => sum + e.amount, 0);
     const perDiemTotal = expenses.filter((e) => e.perDiem).reduce((sum, e) => sum + e.amount, 0);
     rows.push([]);
     if (trip.countMode === 'countup') {
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '', '']);
     } else {
-      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '', '', '']);
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '']);
-      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '', '', '']);
+      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '', '', '', '']);
     }
     if (reimbursementTotal > 0) {
-      rows.push(['', '', '', 'Total reimbursements', reimbursementTotal.toFixed(2), '', '', '', '', '']);
+      rows.push(['', '', '', 'Total reimbursements', reimbursementTotal.toFixed(2), '', '', '', '', '', '']);
     }
     if (perDiemTotal > 0) {
-      rows.push(['', '', '', 'Total per diem tagged', perDiemTotal.toFixed(2), '', '', '', '', '']);
+      rows.push(['', '', '', 'Total per diem tagged', perDiemTotal.toFixed(2), '', '', '', '', '', '']);
     }
 
     const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
@@ -1075,14 +1253,21 @@
 
   // ---------- export: printable report ----------
   function reportItemHtml(e) {
+    const photosHtml = e.photo2
+      ? `<div class="report-item-photo-pair">
+          <img src="${e.photo}" alt="Odometer before">
+          <img src="${e.photo2}" alt="Odometer after">
+        </div>`
+      : (e.photo ? `<img src="${e.photo}" alt="Receipt">` : '');
+    const mileageNote = e.miles != null ? ` · ${e.miles} mi @ ${fmtMoney(e.mileageRateUsed || 0)}/mi` : '';
     return `
       <div class="report-item">
-        ${e.photo ? `<img src="${e.photo}" alt="Receipt">` : ''}
+        ${photosHtml}
         <div class="report-item-main">
           <div class="report-item-row">
             <div>
               <div class="report-item-vendor">${escapeHtml(e.vendor || 'Expense')}</div>
-              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${e.excludeFromBudget ? ' · not counted toward budget' : ''}${e.reimbursement ? ' · reimbursement' : ''}${e.perDiem ? ' · per diem' : ''}</div>
+              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${mileageNote}${e.excludeFromBudget ? ' · not counted toward budget' : ''}${e.reimbursement ? ' · reimbursement' : ''}${e.perDiem ? ' · per diem' : ''}</div>
             </div>
             <div class="report-item-amount">${fmtMoney(e.amount)}</div>
           </div>

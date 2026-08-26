@@ -22,6 +22,12 @@ Respond with ONLY raw JSON, no markdown fences, no commentary, matching exactly 
 "startAt"/"endAt" must be in 24-hour local "YYYY-MM-DDTHH:mm" format with no timezone suffix, matching whatever date/time is printed on the document — if only a date is shown with no time, use "00:00" for the time part. If a year isn't printed, infer it from context near the reference date given below.
 If a field truly cannot be determined from the image, use null for it. Never fabricate a value.`;
 
+  const ODOMETER_SYSTEM_PROMPT = `You read two photos of a vehicle's odometer, taken before and after a drive, for someone logging mileage for reimbursement.
+The first image is labeled BEFORE, the second is labeled AFTER. Read the numeric odometer reading in each photo (ignore the trip odometer if both are shown — use the main total-mileage odometer).
+Respond with ONLY raw JSON, no markdown fences, no commentary, matching exactly this shape:
+{"before": number|null, "after": number|null}
+Use the whole number of miles/km shown (ignore any small decimal digit shown in a different color if present, just use the main digits). If a reading truly cannot be determined from its image, use null for it. Never fabricate a value.`;
+
   function stripDataUrlPrefix(dataUrl) {
     const match = /^data:(image\/[a-zA-Z+]+);base64,(.*)$/.exec(dataUrl);
     if (!match) throw new Error('Unexpected image format.');
@@ -37,9 +43,8 @@ If a field truly cannot be determined from the image, use null for it. Never fab
     return JSON.parse(raw.slice(start, end + 1));
   }
 
-  async function callClaudeVision(imageDataUrl, apiKey, systemPrompt, userText) {
+  async function callClaudeVisionContent(content, apiKey, systemPrompt) {
     if (!apiKey) throw new Error('NO_API_KEY');
-    const { mediaType, base64 } = stripDataUrlPrefix(imageDataUrl);
 
     let res;
     try {
@@ -55,15 +60,7 @@ If a field truly cannot be determined from the image, use null for it. Never fab
           model: MODEL,
           max_tokens: 500,
           system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-                { type: 'text', text: userText },
-              ],
-            },
-          ],
+          messages: [{ role: 'user', content }],
         }),
       });
     } catch (networkErr) {
@@ -86,6 +83,29 @@ If a field truly cannot be determined from the image, use null for it. Never fab
     } catch (e) {
       throw new Error('Could not understand Claude\'s response — try entering the details manually.');
     }
+  }
+
+  function imageBlock(dataUrl) {
+    const { mediaType, base64 } = stripDataUrlPrefix(dataUrl);
+    return { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } };
+  }
+
+  function callClaudeVision(imageDataUrl, apiKey, systemPrompt, userText) {
+    return callClaudeVisionContent(
+      [imageBlock(imageDataUrl), { type: 'text', text: userText }],
+      apiKey, systemPrompt
+    );
+  }
+
+  function callClaudeVisionTwoImages(beforeDataUrl, afterDataUrl, apiKey, systemPrompt, userText) {
+    return callClaudeVisionContent(
+      [
+        { type: 'text', text: 'BEFORE:' }, imageBlock(beforeDataUrl),
+        { type: 'text', text: 'AFTER:' }, imageBlock(afterDataUrl),
+        { type: 'text', text: userText },
+      ],
+      apiKey, systemPrompt
+    );
   }
 
   return {
@@ -116,6 +136,17 @@ If a field truly cannot be determined from the image, use null for it. Never fab
         startAt: typeof parsed.startAt === 'string' ? parsed.startAt : null,
         endAt: typeof parsed.endAt === 'string' ? parsed.endAt : null,
         notes: typeof parsed.notes === 'string' ? parsed.notes : null,
+      };
+    },
+
+    async parseOdometerPair(beforeDataUrl, afterDataUrl, apiKey) {
+      const parsed = await callClaudeVisionTwoImages(
+        beforeDataUrl, afterDataUrl, apiKey, ODOMETER_SYSTEM_PROMPT,
+        'Read both odometer photos and return the JSON described in your instructions.'
+      );
+      return {
+        before: typeof parsed.before === 'number' ? parsed.before : null,
+        after: typeof parsed.after === 'number' ? parsed.after : null,
       };
     },
   };

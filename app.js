@@ -43,6 +43,7 @@
     receiptPreviewWrap: $('receiptPreviewWrap'), receiptPreviewImg: $('receiptPreviewImg'),
     attachPhotoBtn: $('attachPhotoBtn'), removePhotoBtn: $('removePhotoBtn'), photoFileInput: $('photoFileInput'),
     excludeFromBudgetInput: $('excludeFromBudgetInput'), reimbursementInput: $('reimbursementInput'),
+    companyExpenseInput: $('companyExpenseInput'),
     perDiemCheckboxRow: $('perDiemCheckboxRow'), perDiemCheckboxInput: $('perDiemCheckboxInput'),
     saveExpenseBtn: $('saveExpenseBtn'), deleteExpenseBtn: $('deleteExpenseBtn'), aiReadBtn: $('aiReadBtn'),
 
@@ -66,6 +67,7 @@
     settingsModalOverlay: $('settingsModalOverlay'), tripNameInput: $('tripNameInput'),
     budgetInput: $('budgetInput'), budgetField: $('budgetField'), perDiemInput: $('perDiemInput'),
     mileageEnabledInput: $('mileageEnabledInput'), mileageRateField: $('mileageRateField'), mileageRateInput: $('mileageRateInput'),
+    autoReimburseInput: $('autoReimburseInput'),
     apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
     resetAllBtn: $('resetAllBtn'), loadSampleBtn: $('loadSampleBtn'), tripDatesBtn: $('tripDatesBtn'),
     countModeDownBtn: $('countModeDownBtn'), countModeUpBtn: $('countModeUpBtn'),
@@ -501,7 +503,8 @@
     el.addCategoryRow.style.display = 'none';
     renderCategoryChips(source.category || '');
     el.excludeFromBudgetInput.checked = !!source.excludeFromBudget;
-    el.reimbursementInput.checked = !!source.reimbursement;
+    el.reimbursementInput.checked = source.reimbursement != null ? !!source.reimbursement : (!existing && !!state.trip.autoReimburse);
+    el.companyExpenseInput.checked = !!source.companyExpense;
     el.perDiemCheckboxRow.style.display = state.trip.perDiemRate ? '' : 'none';
     el.perDiemCheckboxInput.checked = !!source.perDiem;
 
@@ -519,6 +522,15 @@
   }
 
   el.addBtn.addEventListener('click', () => openExpenseModal());
+
+  // Reimbursement and Company Expense are opposites — an expense is either billed to
+  // the client or it's your own company's cost, never both.
+  el.reimbursementInput.addEventListener('change', () => {
+    if (el.reimbursementInput.checked) el.companyExpenseInput.checked = false;
+  });
+  el.companyExpenseInput.addEventListener('change', () => {
+    if (el.companyExpenseInput.checked) el.reimbursementInput.checked = false;
+  });
 
   el.attachPhotoBtn.addEventListener('click', () => el.photoFileInput.click());
   el.photoFileInput.addEventListener('change', async () => {
@@ -564,6 +576,7 @@
         address: state.pendingAddress || null,
         excludeFromBudget: el.excludeFromBudgetInput.checked,
         reimbursement: el.reimbursementInput.checked,
+        companyExpense: el.companyExpenseInput.checked,
         perDiem: el.perDiemCheckboxInput.checked,
         createdAt: existing ? existing.createdAt : Date.now(),
       };
@@ -1018,6 +1031,7 @@
     el.mileageEnabledInput.checked = !!state.trip.mileageEnabled;
     el.mileageRateField.style.display = state.trip.mileageEnabled ? '' : 'none';
     el.mileageRateInput.value = state.trip.mileageRate != null ? state.trip.mileageRate : '';
+    el.autoReimburseInput.checked = !!state.trip.autoReimburse;
     el.apiKeyInput.value = state.settings.apiKey || '';
     pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
     el.tripDatesBtn.textContent = dateRangeLabel(pendingTripDates.start, pendingTripDates.end);
@@ -1063,6 +1077,7 @@
       perDiemRate: isNaN(perDiemRate) ? null : perDiemRate,
       mileageEnabled: el.mileageEnabledInput.checked,
       mileageRate: isNaN(mileageRate) ? null : mileageRate,
+      autoReimburse: el.autoReimburseInput.checked,
       startDate: pendingTripDates.start,
       endDate: pendingTripDates.end,
       countMode: pendingCountMode,
@@ -1182,6 +1197,7 @@
       perDiemRate: null,
       mileageEnabled: false,
       mileageRate: null,
+      autoReimburse: false,
       customCategories: [],
       startDate: null,
       endDate: null,
@@ -1217,27 +1233,31 @@
 
   function exportCsv(trip = state.trip, expenses = activeExpenses()) {
     if (expenses.length === 0) { showToast('No expenses to export yet.'); return; }
-    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Reimbursement', 'Per Diem', 'Location', 'Has Photo', 'Miles']];
+    const rows = [['Date', 'Logged At', 'Vendor', 'Category', 'Amount', 'Counted Toward Budget', 'Reimbursement', 'Company Expense', 'Per Diem', 'Location', 'Has Photo', 'Miles']];
     const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     for (const e of sorted) {
-      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', e.reimbursement ? 'Yes' : 'No', e.perDiem ? 'Yes' : 'No', locationLabel(e), e.photo ? 'Yes' : 'No', e.miles != null ? e.miles : '']);
+      rows.push([e.date, fmtTimestamp(e.createdAt), e.vendor, e.category, e.amount.toFixed(2), e.excludeFromBudget ? 'No' : 'Yes', e.reimbursement ? 'Yes' : 'No', e.companyExpense ? 'Yes' : 'No', e.perDiem ? 'Yes' : 'No', locationLabel(e), e.photo ? 'Yes' : 'No', e.miles != null ? e.miles : '']);
     }
     const spent = totalSpent(expenses);
     const reimbursementTotal = expenses.filter((e) => e.reimbursement).reduce((sum, e) => sum + e.amount, 0);
+    const companyExpenseTotal = expenses.filter((e) => e.companyExpense).reduce((sum, e) => sum + e.amount, 0);
     const perDiemTotal = expenses.filter((e) => e.perDiem).reduce((sum, e) => sum + e.amount, 0);
     rows.push([]);
     if (trip.countMode === 'countup') {
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '', '', '']);
     } else {
-      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '', '', '', '']);
-      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '', '']);
-      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Starting budget', trip.budget.toFixed(2), '', '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Total spent', spent.toFixed(2), '', '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Remaining', (trip.budget - spent).toFixed(2), '', '', '', '', '', '', '']);
     }
     if (reimbursementTotal > 0) {
-      rows.push(['', '', '', 'Total reimbursements', reimbursementTotal.toFixed(2), '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Total reimbursements', reimbursementTotal.toFixed(2), '', '', '', '', '', '', '']);
+    }
+    if (companyExpenseTotal > 0) {
+      rows.push(['', '', '', 'Total company expenses', companyExpenseTotal.toFixed(2), '', '', '', '', '', '', '']);
     }
     if (perDiemTotal > 0) {
-      rows.push(['', '', '', 'Total per diem tagged', perDiemTotal.toFixed(2), '', '', '', '', '', '']);
+      rows.push(['', '', '', 'Total per diem tagged', perDiemTotal.toFixed(2), '', '', '', '', '', '', '']);
     }
 
     const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
@@ -1267,7 +1287,7 @@
           <div class="report-item-row">
             <div>
               <div class="report-item-vendor">${escapeHtml(e.vendor || 'Expense')}</div>
-              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${mileageNote}${e.excludeFromBudget ? ' · not counted toward budget' : ''}${e.reimbursement ? ' · reimbursement' : ''}${e.perDiem ? ' · per diem' : ''}</div>
+              <div class="report-item-meta">${escapeHtml(e.category || 'Other')} · ${e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}${mileageNote}${e.excludeFromBudget ? ' · not counted toward budget' : ''}${e.reimbursement ? ' · reimbursement' : ''}${e.companyExpense ? ' · company expense' : ''}${e.perDiem ? ' · per diem' : ''}</div>
             </div>
             <div class="report-item-amount">${fmtMoney(e.amount)}</div>
           </div>

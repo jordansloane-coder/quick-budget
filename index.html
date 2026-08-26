@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=33">
+<link rel="stylesheet" href="style.css?v=34">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -383,6 +383,12 @@
         </label>
       </div>
 
+      <div class="settings-section">
+        <span class="field-label section-label">Troubleshooting</span>
+        <p class="field-help">If a new feature isn't showing up after an update, your device may be stuck on an old cached copy of the app. This clears that cache and reloads — your trips and expenses are stored separately and are never affected.</p>
+        <button type="button" class="secondary-btn" id="forceRefreshBtn" style="width:100%;">🔄 Force Refresh App</button>
+      </div>
+
       <div class="danger-zone">
         <span class="field-label section-label danger-label">Danger Zone</span>
         <button class="secondary-btn danger-text" id="resetAllBtn" style="width:100%;">Clear this trip's expenses</button>
@@ -593,9 +599,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=33"></script>
-<script src="claude.js?v=33"></script>
-<script src="datepicker.js?v=33"></script>
-<script src="app.js?v=33"></script>
+<script src="db.js?v=34"></script>
+<script src="claude.js?v=34"></script>
+<script src="datepicker.js?v=34"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>

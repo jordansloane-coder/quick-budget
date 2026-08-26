@@ -70,6 +70,7 @@
     autoReimburseInput: $('autoReimburseInput'),
     apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
     resetAllBtn: $('resetAllBtn'), loadSampleBtn: $('loadSampleBtn'), tripDatesBtn: $('tripDatesBtn'),
+    forceRefreshBtn: $('forceRefreshBtn'),
     countModeDownBtn: $('countModeDownBtn'), countModeUpBtn: $('countModeUpBtn'),
     bankTripBtn: $('bankTripBtn'),
     pastTripsSection: $('pastTripsSection'), pastTripsList: $('pastTripsList'),
@@ -1099,6 +1100,22 @@
     closeModal(el.settingsModalOverlay);
     renderAll();
     showToast('Settings saved');
+  });
+
+  el.forceRefreshBtn.addEventListener('click', async () => {
+    if (!confirm('Clear the cached app files and reload? Your trips and expenses are stored separately and will not be affected.')) return;
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } finally {
+      location.href = location.pathname + '?_refresh=' + Date.now();
+    }
   });
 
   el.resetAllBtn.addEventListener('click', async () => {

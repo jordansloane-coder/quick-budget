@@ -1200,6 +1200,22 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   border-bottom: 1px solid #eee;
   break-inside: avoid;
 }
+.report-item.excluded { opacity: 0.4; }
+.report-item-include-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #777;
+}
+.report-item-include-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
 .report-item img {
   width: 100%;
   max-width: 380px;
@@ -1257,4 +1273,5 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     padding: 0 28px !important;
   }
   .report-item { break-inside: avoid; }
+  .report-item.excluded { display: none !important; }
 }

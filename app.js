@@ -1323,6 +1323,8 @@
             <div class="report-item-amount">${fmtMoney(e.amount)}</div>
           </div>
         </div>
+        <input type="text" class="report-item-note-input no-print" data-expense-id="${e.id}" placeholder="Add a note for this receipt…" value="${escapeHtml(e.reportNote || '')}">
+        <div class="report-item-note print-only">${escapeHtml(e.reportNote || '')}</div>
       </div>
     `;
   }
@@ -1419,6 +1421,32 @@
     if (cb.checked) state.reportExcludedIds.delete(id); else state.reportExcludedIds.add(id);
     renderReportItemsSection();
     refreshReportSummary();
+  });
+
+  el.reportBody.addEventListener('input', (ev) => {
+    if (ev.target.id !== 'reportNotesInput') return;
+    const text = ev.target.value;
+    $('reportNotesPrint').textContent = text;
+    $('reportNotesBlock').classList.toggle('has-notes', !!text.trim());
+  });
+
+  // Saved on blur ('change'), not per keystroke. Item notes update their print copy in
+  // place instead of re-rendering, since a re-render would swallow the click that
+  // caused the blur (e.g. straight onto an Include checkbox).
+  el.reportBody.addEventListener('change', async (ev) => {
+    const t = ev.target;
+    if (t.id === 'reportNotesInput' && currentReportContext) {
+      const trip = currentReportContext.trip;
+      trip.reportNotes = t.value.trim();
+      await DB.putTrip(trip);
+    } else if (t.classList.contains('report-item-note-input')) {
+      const expense = state.allExpenses.find((e) => e.id === t.dataset.expenseId);
+      if (!expense) return;
+      expense.reportNote = t.value.trim();
+      await DB.putExpense(expense);
+      const printEl = t.closest('.report-item').querySelector('.report-item-note');
+      if (printEl) printEl.textContent = expense.reportNote;
+    }
   });
 
   function defaultReportDateRange(trip, expenses) {
@@ -1585,6 +1613,11 @@
         </div>
       `}
       ${trip.reportShowBreakdown === false ? '' : `<div id="reportBreakdownBox">${reportCategoryBreakdownHtml(expenses)}</div>`}
+      <div class="report-notes-block${trip.reportNotes ? ' has-notes' : ''}" id="reportNotesBlock">
+        <div class="report-section-title">Notes</div>
+        <textarea id="reportNotesInput" class="report-notes-input no-print" rows="3" placeholder="Add notes for the whole report (printed on the PDF)…">${escapeHtml(trip.reportNotes || '')}</textarea>
+        <div class="report-notes-print print-only" id="reportNotesPrint">${escapeHtml(trip.reportNotes || '')}</div>
+      </div>
       ${expenses.length ? `
         <div class="report-sort-row no-print">
           <span class="report-section-title">Sort</span>

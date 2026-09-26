@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=36">
+<link rel="stylesheet" href="style.css?v=37">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -46,11 +46,13 @@
 
     <div class="per-diem-wrap" id="perDiemWrap" style="display:none;">
       <div class="per-diem-row">
-        <span class="per-diem-label">Per Diem Today</span>
+        <span class="per-diem-label" id="perDiemLabel">Per Diem Today</span>
         <span class="per-diem-amount" id="perDiemAmount">$0 left</span>
       </div>
       <div class="per-diem-sub" id="perDiemSub">$0 of $0/day</div>
     </div>
+
+    <div class="category-budgets-wrap" id="categoryBudgetsWrap"></div>
   </header>
 
   <!-- CHECKLIST (collapsed by default) -->
@@ -181,7 +183,7 @@
 
       <label class="checkbox-row" id="perDiemCheckboxRow" style="display:none;">
         <input type="checkbox" id="perDiemCheckboxInput">
-        <span>Count toward per diem <span class="field-optional">(tracked separately as today's daily allowance)</span></span>
+        <span>Count toward <span id="perDiemCheckboxLabel">per diem</span> <span class="field-optional">(tracked separately as today's daily allowance)</span></span>
       </label>
     </div>
     <div class="modal-footer">
@@ -309,13 +311,21 @@
         </div>
       </label>
 
-      <label class="field">
-        <span class="field-label">Per diem <span class="field-optional">(optional — a daily allowance, tracked separately below the main total)</span></span>
-        <div class="amount-input-wrap">
-          <span class="dollar-sign">$</span>
-          <input type="number" inputmode="decimal" step="0.01" min="0" id="perDiemInput" placeholder="e.g. 75">
+      <div class="field">
+        <span class="field-label">Trip dates <span class="field-optional">(optional — set these first if you want a variable per diem below)</span></span>
+        <button type="button" class="secondary-btn date-picker-btn" id="tripDatesBtn">📅 Set trip dates</button>
+      </div>
+
+      <div class="field budgets-field">
+        <span class="field-label">Budgets <span class="field-optional">(optional — each one works differently: a total cap for a category, a per-day allowance, or a per-receipt limit)</span></span>
+        <div id="budgetLinesList" class="budget-lines-list"></div>
+        <p class="field-help gas-mileage-note" id="gasMileageNote" style="display:none;">⚠️ Mileage reimbursement is on below, and you also have a Gas/Fuel budget here — the per-mile rate is usually meant to cover gas already, so tracking both can double-count. Keep both only if you're deliberately budgeting actual fuel receipts separately from mileage.</p>
+        <div class="photo-row">
+          <button type="button" class="secondary-btn" id="addBudgetLineBtn">＋ Add budget</button>
+          <button type="button" class="secondary-btn" id="scanContractBtn">📄 Scan Contract</button>
         </div>
-      </label>
+        <p class="field-help">Scan a contract or budget sheet and Claude will try to pull out spendable line items (fuel, hotel, parking, etc.) as category budgets for you to review before saving.</p>
+      </div>
 
       <label class="checkbox-row">
         <input type="checkbox" id="mileageEnabledInput">
@@ -333,11 +343,6 @@
         <input type="checkbox" id="autoReimburseInput">
         <span>Default new expenses to Reimbursement <span class="field-optional">(good for a trip you're invoicing a client for — flip individual expenses to "Company Expense" instead)</span></span>
       </label>
-
-      <div class="field">
-        <span class="field-label">Trip dates <span class="field-optional">(optional)</span></span>
-        <button type="button" class="secondary-btn date-picker-btn" id="tripDatesBtn">📅 Set trip dates</button>
-      </div>
 
       <div class="field">
         <span class="field-label">Budget display</span>
@@ -599,9 +604,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=36"></script>
-<script src="claude.js?v=36"></script>
-<script src="datepicker.js?v=36"></script>
-<script src="app.js?v=36"></script>
+<script src="db.js?v=37"></script>
+<script src="claude.js?v=37"></script>
+<script src="datepicker.js?v=37"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>

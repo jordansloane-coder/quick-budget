@@ -25,7 +25,8 @@
     bigNumber: $('bigNumber'), bigSub: $('bigSub'), progressFill: $('progressFill'),
     spentLabel: $('spentLabel'), budgetLabel: $('budgetLabel'), tripLabel: $('tripLabel'),
     budgetProgressWrap: $('budgetProgressWrap'),
-    perDiemWrap: $('perDiemWrap'), perDiemAmount: $('perDiemAmount'), perDiemSub: $('perDiemSub'),
+    perDiemWrap: $('perDiemWrap'), perDiemLabel: $('perDiemLabel'), perDiemAmount: $('perDiemAmount'), perDiemSub: $('perDiemSub'),
+    categoryBudgetsWrap: $('categoryBudgetsWrap'),
     countdownWrap: $('countdownWrap'), tripCountdown: $('tripCountdown'),
     expenseList: $('expenseList'), emptyState: $('emptyState'), countPill: $('countPill'),
     reimbursementFilterBtn: $('reimbursementFilterBtn'),
@@ -45,7 +46,7 @@
     attachPhotoBtn: $('attachPhotoBtn'), removePhotoBtn: $('removePhotoBtn'), photoFileInput: $('photoFileInput'),
     excludeFromBudgetInput: $('excludeFromBudgetInput'), reimbursementInput: $('reimbursementInput'),
     companyExpenseInput: $('companyExpenseInput'),
-    perDiemCheckboxRow: $('perDiemCheckboxRow'), perDiemCheckboxInput: $('perDiemCheckboxInput'),
+    perDiemCheckboxRow: $('perDiemCheckboxRow'), perDiemCheckboxInput: $('perDiemCheckboxInput'), perDiemCheckboxLabel: $('perDiemCheckboxLabel'),
     saveExpenseBtn: $('saveExpenseBtn'), deleteExpenseBtn: $('deleteExpenseBtn'), aiReadBtn: $('aiReadBtn'),
 
     scanModalOverlay: $('scanModalOverlay'),
@@ -66,7 +67,9 @@
     mileageAmountPreview: $('mileageAmountPreview'), mileageSaveBtn: $('mileageSaveBtn'),
 
     settingsModalOverlay: $('settingsModalOverlay'), tripNameInput: $('tripNameInput'),
-    budgetInput: $('budgetInput'), budgetField: $('budgetField'), perDiemInput: $('perDiemInput'),
+    budgetInput: $('budgetInput'), budgetField: $('budgetField'),
+    budgetLinesList: $('budgetLinesList'), addBudgetLineBtn: $('addBudgetLineBtn'), scanContractBtn: $('scanContractBtn'),
+    gasMileageNote: $('gasMileageNote'),
     mileageEnabledInput: $('mileageEnabledInput'), mileageRateField: $('mileageRateField'), mileageRateInput: $('mileageRateInput'),
     autoReimburseInput: $('autoReimburseInput'),
     apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
@@ -134,6 +137,7 @@
   };
   let pendingTripDates = { start: null, end: null };    // being edited for the active trip, in Settings
   let pendingCountMode = 'countdown';    // being edited for the active trip, in Settings
+  let pendingBudgetLines = [];   // budget lines being edited for the active trip, in Settings
 
   // ---------- utils ----------
   const fmtMoney = (n) => `$${(Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -264,6 +268,74 @@
     return trimmed;
   }
 
+  // ---------- budget lines ----------
+  // Each budget works differently depending on its type:
+  //   'total'      a cap for the whole trip, tied to a category (line.category) —
+  //                e.g. Fuel: $120 total.
+  //   'daily'      a per-day cash allowance, category-agnostic (tracked via the
+  //                expense.perDiem flag, not a category) — either a flat line.amount,
+  //                or line.dayTypes [{id,name,rate}] with line.dayAssignments mapping
+  //                'YYYY-MM-DD' -> a dayTypes id. At most one 'daily' line at a time.
+  //   'perReceipt' flags any single expense in line.category over line.amount, rather
+  //                than tracking a running total.
+  // Older trips only had a flat perDiemRate + a category->amount categoryBudgets map;
+  // this migrates them into budgetLines the first time the trip is touched.
+  function ensureBudgetLines(trip) {
+    if (trip.budgetLines) return trip.budgetLines;
+    const lines = [];
+    if (trip.perDiemRate) {
+      lines.push({ id: uid(), name: 'Per Diem', type: 'daily', category: null, amount: trip.perDiemRate, dayTypes: null, dayAssignments: null });
+    }
+    for (const [category, amount] of Object.entries(trip.categoryBudgets || {})) {
+      lines.push({ id: uid(), name: category, type: 'total', category, amount, dayTypes: null, dayAssignments: null });
+    }
+    trip.budgetLines = lines;
+    return lines;
+  }
+
+  const dailyLine = (trip) => (trip.budgetLines || []).find((l) => l.type === 'daily') || null;
+  const totalLines = (trip) => (trip.budgetLines || []).filter((l) => l.type === 'total');
+  const perReceiptLines = (trip) => (trip.budgetLines || []).filter((l) => l.type === 'perReceipt');
+  function totalBudgetsMap(trip) {
+    ensureBudgetLines(trip);
+    return Object.fromEntries(totalLines(trip).map((l) => [l.category, l.amount]));
+  }
+
+  function datesInRange(startIso, endIso) {
+    if (!startIso || !endIso) return [];
+    const dates = [];
+    let cur = new Date(startIso + 'T00:00:00');
+    const end = new Date(endIso + 'T00:00:00');
+    if (isNaN(cur) || isNaN(end) || cur > end) return [];
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  }
+
+  // A sane default for a date that hasn't been explicitly assigned a day type yet:
+  // the first and last day of the trip default to the first day type (usually
+  // "Travel Day"), everything in between defaults to the second (usually "Working Day").
+  function defaultDayTypeId(dayTypes, dateIso, allDates) {
+    if (!dayTypes || dayTypes.length === 0) return null;
+    const idx = allDates.indexOf(dateIso);
+    const isEdge = allDates.length === 0 || idx === 0 || idx === allDates.length - 1;
+    const dt = (isEdge ? dayTypes[0] : dayTypes[1]) || dayTypes[0];
+    return dt ? dt.id : null;
+  }
+
+  // Resolves a 'daily' line's rate for a specific date: the flat rate, or — if it has
+  // day types — whichever day type that date is assigned to (or would default to).
+  function dailyRateForDate(line, dateIso, allDates) {
+    if (!line.dayTypes || line.dayTypes.length === 0) return { rate: line.amount || 0, dayTypeName: '' };
+    const assignments = line.dayAssignments || {};
+    const hasAssignment = Object.prototype.hasOwnProperty.call(assignments, dateIso);
+    const assignedId = hasAssignment ? assignments[dateIso] : defaultDayTypeId(line.dayTypes, dateIso, allDates);
+    const dayType = line.dayTypes.find((d) => d.id === assignedId);
+    return dayType ? { rate: dayType.rate || 0, dayTypeName: dayType.name } : { rate: 0, dayTypeName: '' };
+  }
+
   // ---------- render ----------
   function renderHero() {
     const spent = totalSpent();
@@ -302,6 +374,7 @@
     }
 
     renderPerDiem();
+    renderCategoryBudgets();
     el.mileageQuickAddWrap.style.display = state.trip.mileageEnabled ? '' : 'none';
 
     el.bigNumber.classList.add('pulse');
@@ -309,19 +382,49 @@
   }
 
   function renderPerDiem() {
-    const rate = state.trip.perDiemRate || 0;
-    if (!rate) { el.perDiemWrap.style.display = 'none'; return; }
+    const trip = state.trip;
+    const line = dailyLine(trip);
+    if (!line) { el.perDiemWrap.style.display = 'none'; return; }
 
     const today = todayISO();
+    const range = datesInRange(trip.startDate, trip.endDate);
+    const { rate, dayTypeName } = dailyRateForDate(line, today, range);
+    if (!rate) { el.perDiemWrap.style.display = 'none'; return; }
+
     const spentToday = activeExpenses()
       .filter((e) => e.perDiem && e.date === today)
       .reduce((sum, e) => sum + e.amount, 0);
     const remaining = rate - spentToday;
 
     el.perDiemWrap.style.display = '';
+    el.perDiemLabel.textContent = dayTypeName ? `${line.name} Today · ${dayTypeName}` : `${line.name} Today`;
     el.perDiemAmount.textContent = remaining < 0 ? `${fmtMoney(Math.abs(remaining))} over` : `${fmtMoney(remaining)} left`;
     el.perDiemAmount.classList.toggle('bad', remaining < 0);
     el.perDiemSub.textContent = `${fmtMoney(spentToday)} of ${fmtMoney(rate)}/day`;
+  }
+
+  function renderCategoryBudgets() {
+    const trip = state.trip;
+    const lines = totalLines(trip).filter((l) => l.amount > 0);
+    el.categoryBudgetsWrap.innerHTML = '';
+    if (lines.length === 0) return;
+
+    const expenses = activeExpenses();
+    for (const line of lines) {
+      const spent = expenses.filter((e) => (e.category || 'Other') === line.category).reduce((sum, e) => sum + e.amount, 0);
+      const remaining = line.amount - spent;
+
+      const pill = document.createElement('div');
+      pill.className = 'category-budget-pill';
+      pill.innerHTML = `
+        <div class="category-budget-pill-row">
+          <span class="category-budget-pill-label">${escapeHtml(line.category)}</span>
+          <span class="category-budget-pill-amount${remaining < 0 ? ' bad' : ''}">${remaining < 0 ? `${fmtMoney(Math.abs(remaining))} over` : `${fmtMoney(remaining)} left`}</span>
+        </div>
+        <div class="category-budget-pill-sub">${fmtMoney(spent)} of ${fmtMoney(line.amount)}</div>
+      `;
+      el.categoryBudgetsWrap.appendChild(pill);
+    }
   }
 
   const CATEGORY_EMOJI = { Food: '🍔', Groceries: '🛒', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Mileage: '🛣️', Other: '🧾' };
@@ -512,7 +615,9 @@
     el.excludeFromBudgetInput.checked = !!source.excludeFromBudget;
     el.reimbursementInput.checked = source.reimbursement != null ? !!source.reimbursement : (!existing && !!state.trip.autoReimburse);
     el.companyExpenseInput.checked = !!source.companyExpense;
-    el.perDiemCheckboxRow.style.display = state.trip.perDiemRate ? '' : 'none';
+    const activeDailyLine = dailyLine(state.trip);
+    el.perDiemCheckboxRow.style.display = activeDailyLine ? '' : 'none';
+    if (activeDailyLine) el.perDiemCheckboxLabel.textContent = activeDailyLine.name;
     el.perDiemCheckboxInput.checked = !!source.perDiem;
 
     if (state.pendingPhoto) {
@@ -594,7 +699,10 @@
 
       closeModal(el.expenseModalOverlay);
       renderAll();
-      showToast(state.editingId ? 'Expense updated' : `Logged ${fmtMoney(amount)}`);
+      const overCapLine = perReceiptLines(state.trip).find((l) => l.category === expense.category && l.amount > 0 && expense.amount > l.amount);
+      showToast(overCapLine
+        ? `${fmtMoney(expense.amount)} is over the ${fmtMoney(overCapLine.amount)} per-receipt cap for ${expense.category}`
+        : (state.editingId ? 'Expense updated' : `Logged ${fmtMoney(amount)}`));
 
       // Prefer the address printed on a scanned receipt — it's the actual vendor location,
       // more accurate than GPS. Only fall back to device location when scanning didn't give us one.
@@ -818,6 +926,10 @@
       el.scanModalTitle.textContent = 'Read Travel Document';
       el.scanChooseHint.textContent = 'Take a photo of a hotel confirmation, boarding pass, rental agreement, or any other travel document. Claude will try to read the details for you.';
       el.scanLoadingHint.textContent = 'Reading document…';
+    } else if (scanMode === 'contract') {
+      el.scanModalTitle.textContent = 'Scan Contract';
+      el.scanChooseHint.textContent = 'Take a photo of the contract or budget page with the itemized fee table. Claude will try to pull out the spendable line items (fuel, hotel, parking, etc.) as category budgets for you to review.';
+      el.scanLoadingHint.textContent = 'Reading contract…';
     } else {
       el.scanModalTitle.textContent = 'Scan Receipt';
       el.scanChooseHint.textContent = 'Take a photo of your receipt, or choose one from your library. Claude will try to read the vendor, total, date and category for you.';
@@ -878,9 +990,24 @@
     }
   }
 
+  // Contract line items get merged into the in-progress budget lines in Settings, each
+  // as a 'total' line — nothing is written to the trip until Settings' own Save is clicked.
+  async function applyParsedItemsToCategoryBudgets(items) {
+    for (const item of items) {
+      const existing = allCategories().find((c) => c.toLowerCase() === item.label.toLowerCase());
+      const category = existing || await addCustomCategory(item.label);
+      if (!category) continue;
+      const row = pendingBudgetLines.find((r) => r.type === 'total' && r.category === category);
+      if (row) row.amount = item.amount;
+      else pendingBudgetLines.push({ id: uid(), name: category, type: 'total', category, amount: item.amount, dayTypes: null, dayAssignments: null });
+    }
+    renderBudgetLinesList();
+  }
+
   el.scanBtn.addEventListener('click', () => { scanMode = 'expense'; scanFillTarget = 'new'; resetScanModal(); openModal(el.scanModalOverlay); });
   el.aiReadBtn.addEventListener('click', () => { scanMode = 'expense'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
   el.travelReadFromPhotoBtn.addEventListener('click', () => { scanMode = 'travel'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
+  el.scanContractBtn.addEventListener('click', () => { scanMode = 'contract'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
   el.scanCameraBtn.addEventListener('click', () => el.scanCameraInput.click());
   el.scanLibraryBtn.addEventListener('click', () => el.scanLibraryInput.click());
   el.scanNoKeySettingsLink.addEventListener('click', () => {
@@ -900,6 +1027,8 @@
         if (scanMode === 'travel') {
           applyPhotoToTravelForm(small);
           showToast('Photo attached — add an API key in Settings to auto-fill details.');
+        } else if (scanMode === 'contract') {
+          showToast('Add an API key in Settings to scan a contract.');
         } else if (scanFillTarget === 'inline') {
           applyPhotoToOpenExpenseModal(small);
           showToast('Photo attached — add an API key in Settings to auto-fill details.');
@@ -920,6 +1049,18 @@
         applyParsedToTravelForm(parsed, small);
         const missing = ['name', 'confirmationNumber', 'startAt'].filter((k) => parsed[k] == null);
         showToast(missing.length ? 'Got most of it — check the highlighted fields.' : 'Document read. Review and save.');
+        return;
+      }
+
+      if (scanMode === 'contract') {
+        const items = await ClaudeReceipts.parseContractBudget(small, state.settings.apiKey);
+        closeModal(el.scanModalOverlay);
+        if (items.length === 0) {
+          showToast('Could not find a line-item budget on that page — add rows manually.');
+          return;
+        }
+        await applyParsedItemsToCategoryBudgets(items);
+        showToast(`Found ${items.length} line item${items.length === 1 ? '' : 's'} — review before saving.`);
         return;
       }
 
@@ -955,6 +1096,8 @@
     closeModal(el.scanModalOverlay);
     if (scanMode === 'travel') {
       if (scanPendingPhoto) applyPhotoToTravelForm(scanPendingPhoto);
+    } else if (scanMode === 'contract') {
+      // Nothing to attach — the review rows in Settings are untouched, add manually instead.
     } else if (scanFillTarget === 'inline') {
       if (scanPendingPhoto) applyPhotoToOpenExpenseModal(scanPendingPhoto);
     } else {
@@ -1031,17 +1174,234 @@
     if (budgetFieldEl) budgetFieldEl.style.display = mode === 'countup' ? 'none' : '';
   }
 
+  // ---------- budget lines editor (Settings) ----------
+  function budgetLineTypeOptionsHtml(line) {
+    const hasOtherDaily = pendingBudgetLines.some((l) => l !== line && l.type === 'daily');
+    const opts = [
+      { value: 'total', label: 'Total for trip' },
+      { value: 'daily', label: 'Daily rate', disabled: hasOtherDaily && line.type !== 'daily' },
+      { value: 'perReceipt', label: 'Per-receipt cap' },
+    ];
+    return opts.map((o) =>
+      `<option value="${o.value}"${line.type === o.value ? ' selected' : ''}${o.disabled ? ' disabled' : ''}>${o.label}</option>`
+    ).join('');
+  }
+
+  function renderDayAssignmentHtml(line) {
+    const range = datesInRange(pendingTripDates.start, pendingTripDates.end);
+    if (range.length === 0) {
+      return `<p class="field-help">Set trip dates above to assign a day type to each day.</p>`;
+    }
+    line.dayAssignments = line.dayAssignments || {};
+    return `
+      <div class="day-assign-list">
+        ${range.map((dateIso) => {
+          // hasOwnProperty, not a truthy check — an explicit "No per diem" choice is an
+          // empty string, which must stay distinct from "never assigned" (falls back to
+          // the default) or it would keep reverting on every re-render.
+          const hasAssignment = Object.prototype.hasOwnProperty.call(line.dayAssignments, dateIso);
+          const assignedId = hasAssignment ? line.dayAssignments[dateIso] : defaultDayTypeId(line.dayTypes, dateIso, range);
+          if (!hasAssignment) line.dayAssignments[dateIso] = assignedId; // capture the default so Save persists it
+          return `
+            <div class="day-assign-row">
+              <span class="day-assign-date">${fmtShortDate(dateIso)}</span>
+              <select class="day-assign-select" data-date="${dateIso}">
+                <option value="">No per diem</option>
+                ${line.dayTypes.map((dt) => `<option value="${dt.id}"${assignedId === dt.id ? ' selected' : ''}>${escapeHtml(dt.name)}</option>`).join('')}
+              </select>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderBudgetLineBodyHtml(line) {
+    if (line.type === 'total' || line.type === 'perReceipt') {
+      return `
+        <div class="amount-input-wrap">
+          <span class="dollar-sign">$</span>
+          <input type="number" inputmode="decimal" step="0.01" min="0" class="bl-amount" placeholder="0" value="${line.amount != null ? line.amount : ''}">
+        </div>
+        <p class="field-help">${line.type === 'total' ? 'A cap for the whole trip.' : `Flags any single ${escapeHtml(line.category || 'expense')} receipt over this amount — doesn't track a running total.`}</p>
+      `;
+    }
+    // 'daily'
+    const variable = !!(line.dayTypes && line.dayTypes.length);
+    // Built lazily (as functions, not pre-assigned template strings) so the unused
+    // branch never runs — the variable-mode markup assumes line.dayTypes is populated,
+    // which isn't true while in flat mode.
+    const renderFlatAmountHtml = () => `
+      <div class="amount-input-wrap">
+        <span class="dollar-sign">$</span>
+        <input type="number" inputmode="decimal" step="0.01" min="0" class="bl-amount" placeholder="e.g. 75" value="${line.amount != null ? line.amount : ''}">
+      </div>
+      <p class="field-help">A flat allowance per day, tracked separately from the main total.</p>
+    `;
+    const renderVariableHtml = () => `
+      <div class="day-type-rows">
+        ${line.dayTypes.map((dt, i) => `
+          <div class="day-type-row" data-day-type-idx="${i}">
+            <input type="text" class="dt-name" placeholder="e.g. Travel Day" value="${escapeHtml(dt.name || '')}">
+            <div class="amount-input-wrap">
+              <span class="dollar-sign">$</span>
+              <input type="number" inputmode="decimal" step="0.01" min="0" class="dt-rate" placeholder="0" value="${dt.rate != null ? dt.rate : ''}">
+            </div>
+            <button type="button" class="icon-btn day-type-row-remove" aria-label="Remove day type">✕</button>
+          </div>
+        `).join('')}
+      </div>
+      <button type="button" class="add-day-type-btn">＋ Add day type</button>
+      ${renderDayAssignmentHtml(line)}
+    `;
+    return `
+      <div class="mode-toggle-row budget-line-rate-toggle">
+        <button type="button" class="mode-toggle-btn bl-rate-flat${!variable ? ' selected' : ''}">Flat rate</button>
+        <button type="button" class="mode-toggle-btn bl-rate-variable${variable ? ' selected' : ''}">Varies by day</button>
+      </div>
+      <div class="bl-rate-body">${variable ? renderVariableHtml() : renderFlatAmountHtml()}</div>
+    `;
+  }
+
+  function wireBudgetLineBody(div, line) {
+    const amountInput = div.querySelector('.bl-amount');
+    if (amountInput) amountInput.addEventListener('input', (e) => { line.amount = e.target.value; });
+    if (line.type !== 'daily') return;
+
+    div.querySelector('.bl-rate-flat').addEventListener('click', () => {
+      line.dayTypes = null;
+      line.dayAssignments = null;
+      renderBudgetLinesList();
+    });
+    div.querySelector('.bl-rate-variable').addEventListener('click', () => {
+      if (!line.dayTypes || line.dayTypes.length === 0) {
+        line.dayTypes = [
+          { id: uid(), name: 'Travel Day', rate: line.amount || '' },
+          { id: uid(), name: 'Working Day', rate: line.amount || '' },
+        ];
+        line.dayAssignments = {};
+      }
+      renderBudgetLinesList();
+    });
+
+    div.querySelectorAll('.day-type-row').forEach((row) => {
+      const idx = Number(row.dataset.dayTypeIdx);
+      row.querySelector('.dt-name').addEventListener('input', (e) => { line.dayTypes[idx].name = e.target.value; });
+      row.querySelector('.dt-rate').addEventListener('input', (e) => { line.dayTypes[idx].rate = e.target.value; });
+      row.querySelector('.day-type-row-remove').addEventListener('click', () => {
+        const removedId = line.dayTypes[idx].id;
+        line.dayTypes.splice(idx, 1);
+        if (line.dayAssignments) {
+          for (const date of Object.keys(line.dayAssignments)) {
+            if (line.dayAssignments[date] === removedId) delete line.dayAssignments[date];
+          }
+        }
+        renderBudgetLinesList();
+      });
+    });
+
+    const addDayTypeBtn = div.querySelector('.add-day-type-btn');
+    if (addDayTypeBtn) addDayTypeBtn.addEventListener('click', () => {
+      line.dayTypes.push({ id: uid(), name: '', rate: '' });
+      renderBudgetLinesList();
+    });
+
+    div.querySelectorAll('.day-assign-select').forEach((sel) => {
+      sel.addEventListener('change', (e) => {
+        line.dayAssignments = line.dayAssignments || {};
+        // Always keep the key present, even as '' for "No per diem" — an explicit
+        // choice must stay distinct from "never assigned" (see renderDayAssignmentHtml).
+        line.dayAssignments[e.target.dataset.date] = e.target.value;
+      });
+    });
+  }
+
+  function updateGasMileageNote() {
+    const fuelWords = ['gas', 'fuel', 'gasoline', 'petrol'];
+    const hasFuelBudget = pendingBudgetLines.some((l) =>
+      (l.type === 'total' || l.type === 'perReceipt') && l.category && fuelWords.some((w) => l.category.toLowerCase().includes(w))
+    );
+    el.gasMileageNote.style.display = (el.mileageEnabledInput.checked && hasFuelBudget) ? '' : 'none';
+  }
+
+  function renderBudgetLinesList() {
+    el.budgetLinesList.innerHTML = '';
+    pendingBudgetLines.forEach((line, idx) => {
+      const div = document.createElement('div');
+      div.className = 'budget-line';
+
+      const nameFieldHtml = line.type === 'daily'
+        ? `<input type="text" class="bl-name" placeholder="e.g. Per Diem" value="${escapeHtml(line.name || '')}">`
+        : `<select class="bl-category">${allCategories().map((cat) => `<option value="${escapeHtml(cat)}"${cat === line.category ? ' selected' : ''}>${escapeHtml(cat)}</option>`).join('')}</select>`;
+
+      div.innerHTML = `
+        <div class="budget-line-header">
+          ${nameFieldHtml}
+          <select class="bl-type budget-line-type-select">${budgetLineTypeOptionsHtml(line)}</select>
+          <button type="button" class="icon-btn budget-line-remove" aria-label="Remove budget">✕</button>
+        </div>
+        <div class="budget-line-body">${renderBudgetLineBodyHtml(line)}</div>
+      `;
+
+      div.querySelector('.bl-type').addEventListener('change', (e) => {
+        const previousType = line.type;
+        line.type = e.target.value;
+        if (line.type === 'daily') {
+          line.category = null;
+          // A category-derived name (e.g. "Food") makes no sense once this isn't a
+          // category budget any more — reset it, unless it was already a daily line.
+          if (previousType !== 'daily' || !line.name) line.name = 'Per Diem';
+        } else {
+          line.category = line.category || allCategories()[0];
+          line.name = line.category;
+          line.dayTypes = null;
+          line.dayAssignments = null;
+        }
+        renderBudgetLinesList();
+      });
+
+      if (line.type === 'daily') {
+        div.querySelector('.bl-name').addEventListener('input', (e) => { line.name = e.target.value; });
+      } else {
+        div.querySelector('.bl-category').addEventListener('change', (e) => { line.category = e.target.value; line.name = e.target.value; updateGasMileageNote(); });
+      }
+
+      div.querySelector('.budget-line-remove').addEventListener('click', () => {
+        pendingBudgetLines.splice(idx, 1);
+        renderBudgetLinesList();
+      });
+
+      wireBudgetLineBody(div, line);
+      el.budgetLinesList.appendChild(div);
+    });
+    updateGasMileageNote();
+  }
+
+  el.addBudgetLineBtn.addEventListener('click', () => {
+    const used = new Set(pendingBudgetLines.filter((l) => l.type !== 'daily').map((l) => l.category));
+    const next = allCategories().find((c) => !used.has(c)) || allCategories()[0];
+    pendingBudgetLines.push({ id: uid(), name: next, type: 'total', category: next, amount: '', dayTypes: null, dayAssignments: null });
+    renderBudgetLinesList();
+  });
+
   function openSettingsModal() {
     el.tripNameInput.value = state.trip.name || '';
     el.budgetInput.value = state.trip.budget != null ? state.trip.budget : '';
-    el.perDiemInput.value = state.trip.perDiemRate != null ? state.trip.perDiemRate : '';
+    pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
+    el.tripDatesBtn.textContent = dateRangeLabel(pendingTripDates.start, pendingTripDates.end);
     el.mileageEnabledInput.checked = !!state.trip.mileageEnabled;
     el.mileageRateField.style.display = state.trip.mileageEnabled ? '' : 'none';
     el.mileageRateInput.value = state.trip.mileageRate != null ? state.trip.mileageRate : '';
+    // Deep-cloned so closing without Save (or a contract scan you back out of) never
+    // mutates the real trip.
+    pendingBudgetLines = ensureBudgetLines(state.trip).map((l) => ({
+      ...l,
+      dayTypes: l.dayTypes ? l.dayTypes.map((d) => ({ ...d })) : null,
+      dayAssignments: l.dayAssignments ? { ...l.dayAssignments } : null,
+    }));
+    renderBudgetLinesList();
     el.autoReimburseInput.checked = !!state.trip.autoReimburse;
     el.apiKeyInput.value = state.settings.apiKey || '';
-    pendingTripDates = { start: state.trip.startDate || null, end: state.trip.endDate || null };
-    el.tripDatesBtn.textContent = dateRangeLabel(pendingTripDates.start, pendingTripDates.end);
     pendingCountMode = state.trip.countMode === 'countup' ? 'countup' : 'countdown';
     renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode, el.budgetField);
     renderPastTrips();
@@ -1061,6 +1421,7 @@
   });
   el.mileageEnabledInput.addEventListener('change', () => {
     el.mileageRateField.style.display = el.mileageEnabledInput.checked ? '' : 'none';
+    updateGasMileageNote();
   });
   el.tripDatesBtn.addEventListener('click', () => {
     DatePicker.open({
@@ -1069,19 +1430,54 @@
       onDone: ({ start, end }) => {
         pendingTripDates = { start, end };
         el.tripDatesBtn.textContent = dateRangeLabel(start, end);
+        renderBudgetLinesList(); // the daily line's day-assignment list depends on trip dates
       },
     });
   });
 
+  // Turns the in-progress editor rows into the trip's real budgetLines: drops rows
+  // with no usable amount, and — since only one 'daily' line is allowed — keeps just
+  // the first if somehow more than one slipped through.
+  function collectBudgetLinesForSave() {
+    const collected = pendingBudgetLines.map((line) => {
+      if (line.type === 'daily') {
+        const dayTypes = (line.dayTypes || [])
+          .map((dt) => ({ id: dt.id, name: (dt.name || '').trim() || 'Day', rate: parseFloat(dt.rate) || 0 }))
+          .filter((dt) => dt.rate > 0);
+        const amount = parseFloat(line.amount);
+        if (dayTypes.length === 0 && (isNaN(amount) || amount <= 0)) return null;
+        return {
+          id: line.id,
+          name: (line.name || '').trim() || 'Per Diem',
+          type: 'daily',
+          category: null,
+          amount: dayTypes.length ? null : amount,
+          dayTypes: dayTypes.length ? dayTypes : null,
+          dayAssignments: dayTypes.length ? (line.dayAssignments || {}) : null,
+        };
+      }
+      const amount = parseFloat(line.amount);
+      if (!line.category || isNaN(amount) || amount <= 0) return null;
+      return { id: line.id, name: line.category, type: line.type, category: line.category, amount, dayTypes: null, dayAssignments: null };
+    }).filter(Boolean);
+
+    let seenDaily = false;
+    return collected.filter((l) => {
+      if (l.type !== 'daily') return true;
+      if (seenDaily) return false;
+      seenDaily = true;
+      return true;
+    });
+  }
+
   el.saveSettingsBtn.addEventListener('click', async () => {
     const budget = parseFloat(el.budgetInput.value);
-    const perDiemRate = parseFloat(el.perDiemInput.value);
     const mileageRate = parseFloat(el.mileageRateInput.value);
     const updatedTrip = {
       ...state.trip,
       name: el.tripNameInput.value.trim() || 'Trip Budget',
       budget: isNaN(budget) ? DEFAULT_BUDGET : budget,
-      perDiemRate: isNaN(perDiemRate) ? null : perDiemRate,
+      budgetLines: collectBudgetLinesForSave(),
       mileageEnabled: el.mileageEnabledInput.checked,
       mileageRate: isNaN(mileageRate) ? null : mileageRate,
       autoReimburse: el.autoReimburseInput.checked,
@@ -1217,7 +1613,7 @@
       id: uid(),
       name: '',
       budget: DEFAULT_BUDGET,
-      perDiemRate: null,
+      budgetLines: [],
       mileageEnabled: false,
       mileageRate: null,
       autoReimburse: false,
@@ -1338,18 +1734,23 @@
     return Object.entries(totals).sort((a, b) => b[1] - a[1]); // biggest category first
   }
 
-  function reportCategoryBreakdownHtml(expenses) {
+  function reportCategoryBreakdownHtml(expenses, categoryBudgets = {}) {
     if (expenses.length === 0) return '';
     const rows = categoryTotals(expenses);
     return `
       <div class="report-breakdown">
         <div class="report-section-title">By Category</div>
-        ${rows.map(([cat, total]) => `
-          <div class="report-breakdown-row">
-            <span>${escapeHtml(cat)}</span>
-            <span>${fmtMoney(total)}</span>
-          </div>
-        `).join('')}
+        ${rows.map(([cat, total]) => {
+          const budget = categoryBudgets[cat];
+          const over = budget != null && total > budget;
+          return `
+            <div class="report-breakdown-row">
+              <span>${escapeHtml(cat)}</span>
+              <span class="${over ? 'over-budget' : ''}">${fmtMoney(total)}</span>
+            </div>
+            ${budget != null ? `<div class="report-breakdown-budget-note">${over ? `${fmtMoney(total - budget)} over` : `${fmtMoney(budget - total)} left`} of ${fmtMoney(budget)} budgeted</div>` : ''}
+          `;
+        }).join('')}
       </div>
     `;
   }
@@ -1407,7 +1808,7 @@
       $('reportSummaryRemainingLbl').textContent = remaining < 0 ? 'Over' : 'Remaining';
     }
     const breakdownBox = $('reportBreakdownBox');
-    if (breakdownBox) breakdownBox.innerHTML = reportCategoryBreakdownHtml(visible);
+    if (breakdownBox) breakdownBox.innerHTML = reportCategoryBreakdownHtml(visible, totalBudgetsMap(trip));
   }
 
   // Deselecting a receipt in the report review only ever needs to touch reportBody's
@@ -1612,7 +2013,7 @@
           `}
         </div>
       `}
-      ${trip.reportShowBreakdown === false ? '' : `<div id="reportBreakdownBox">${reportCategoryBreakdownHtml(expenses)}</div>`}
+      ${trip.reportShowBreakdown === false ? '' : `<div id="reportBreakdownBox">${reportCategoryBreakdownHtml(expenses, totalBudgetsMap(trip))}</div>`}
       <div class="report-notes-block${trip.reportNotes ? ' has-notes' : ''}" id="reportNotesBlock">
         <div class="report-section-title">Notes</div>
         <textarea id="reportNotesInput" class="report-notes-input no-print" rows="3" placeholder="Add notes for the whole report (printed on the PDF)…">${escapeHtml(trip.reportNotes || '')}</textarea>
@@ -1959,6 +2360,10 @@
     const { trips, activeTrip } = await loadTripsAndActive();
     state.trips = trips;
     state.trip = activeTrip;
+    if (!activeTrip.budgetLines) {
+      ensureBudgetLines(activeTrip);
+      await DB.putTrip(activeTrip);
+    }
     state.allExpenses = await DB.getAllExpenses();
     state.allChecklist = await DB.getAllChecklistItems();
     state.allTravelInfo = await DB.getAllTravelInfo();
@@ -2060,6 +2465,10 @@
     const { trips, activeTrip } = await loadTripsAndActive();
     state.trips = trips;
     state.trip = activeTrip;
+    if (!activeTrip.budgetLines) {
+      ensureBudgetLines(activeTrip);
+      await DB.putTrip(activeTrip);
+    }
     state.allExpenses = await DB.getAllExpenses();
     state.allChecklist = await DB.getAllChecklistItems();
     state.allTravelInfo = await DB.getAllTravelInfo();

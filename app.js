@@ -16,6 +16,7 @@
     pendingPhoto: null,   // dataURL currently attached in the expense modal
     pendingAddress: null, // address text currently attached in the expense modal (from a scanned receipt)
     filterReimbursement: false, // when true, the on-screen list shows only reimbursement-tagged expenses
+    reportExcludedIds: new Set(), // expense ids deselected in the report review screen, reset on each new "Generate Report"
   };
 
   // ---------- element refs ----------
@@ -1399,7 +1400,7 @@
     openReportSetupModal();
   });
   el.exportReportCsvBtn.addEventListener('click', () => {
-    if (currentReportContext) exportCsv(currentReportContext.trip, currentReportContext.expenses);
+    if (currentReportContext) exportCsv(currentReportContext.trip, includedReportExpenses());
   });
 
   // ---------- export: printable report ----------
@@ -1411,8 +1412,13 @@
         </div>`
       : (e.photo ? `<img src="${e.photo}" alt="Receipt">` : '');
     const mileageNote = e.miles != null ? ` · ${e.miles} mi @ ${fmtMoney(e.mileageRateUsed || 0)}/mi` : '';
+    const excluded = state.reportExcludedIds.has(e.id);
     return `
-      <div class="report-item">
+      <div class="report-item${excluded ? ' excluded' : ''}" data-expense-id="${e.id}">
+        <label class="report-item-include-row no-print">
+          <input type="checkbox" class="report-item-include-checkbox" data-expense-id="${e.id}" ${excluded ? '' : 'checked'}>
+          <span>Include in export</span>
+        </label>
         ${photosHtml}
         <div class="report-item-main">
           <div class="report-item-row">
@@ -1423,6 +1429,8 @@
             <div class="report-item-amount">${fmtMoney(e.amount)}</div>
           </div>
         </div>
+        <input type="text" class="report-item-note-input no-print" data-expense-id="${e.id}" placeholder="Add a note for this receipt…" value="${escapeHtml(e.reportNote || '')}">
+        <div class="report-item-note print-only">${escapeHtml(e.reportNote || '')}</div>
       </div>
     `;
   }
@@ -1462,12 +1470,21 @@
     const byDate = (a, b) => (a.date || '').localeCompare(b.date || '');
 
     if (mode === 'category') {
-      return categoryTotals(expenses).map(([cat, total]) => `
-        <div class="report-group">
-          <div class="report-group-header"><span>${escapeHtml(cat)}</span><span>${fmtMoney(total)}</span></div>
-          ${expenses.filter((e) => (e.category || 'Other') === cat).sort(byDate).map(reportItemHtml).join('')}
-        </div>
-      `).join('');
+      // Every category with any item still gets a group (so a fully-deselected category
+      // stays visible for review), but the header total only counts included items —
+      // matching what will actually print.
+      return categoryTotals(expenses).map(([cat]) => {
+        const catExpenses = expenses.filter((e) => (e.category || 'Other') === cat);
+        const catTotal = catExpenses
+          .filter((e) => !state.reportExcludedIds.has(e.id))
+          .reduce((sum, e) => sum + e.amount, 0);
+        return `
+          <div class="report-group">
+            <div class="report-group-header"><span>${escapeHtml(cat)}</span><span>${fmtMoney(catTotal)}</span></div>
+            ${catExpenses.sort(byDate).map(reportItemHtml).join('')}
+          </div>
+        `;
+      }).join('');
     }
     return [...expenses].sort(byDate).map(reportItemHtml).join('');
   }
@@ -1479,6 +1496,69 @@
     const container = $('reportItemsContainer');
     if (container) container.innerHTML = renderReportItemsHtml(currentReportContext.expenses, reportSortMode);
   }
+
+  function includedReportExpenses() {
+    if (!currentReportContext) return [];
+    return currentReportContext.expenses.filter((e) => !state.reportExcludedIds.has(e.id));
+  }
+
+  function refreshReportSummary() {
+    if (!currentReportContext) return;
+    const { trip } = currentReportContext;
+    const visible = includedReportExpenses();
+    const spent = totalSpent(visible);
+    const budget = trip.budget || 0;
+    const remaining = budget - spent;
+
+    const spentEl = $('reportSummarySpent');
+    if (spentEl) spentEl.textContent = fmtMoney(spent);
+    const remainingEl = $('reportSummaryRemaining');
+    if (remainingEl) {
+      remainingEl.textContent = fmtMoney(remaining);
+      $('reportSummaryRemainingLbl').textContent = remaining < 0 ? 'Over' : 'Remaining';
+    }
+    const breakdownBox = $('reportBreakdownBox');
+    if (breakdownBox) breakdownBox.innerHTML = reportCategoryBreakdownHtml(visible, trip.categoryBudgets || {});
+  }
+
+  // Deselecting a receipt in the report review only ever needs to touch reportBody's
+  // children, which get fully replaced on re-render — delegate to the stable parent
+  // instead of binding per-item, or repeated "Generate Report" clicks would stack
+  // duplicate listeners on the same nodes.
+  el.reportBody.addEventListener('change', (ev) => {
+    const cb = ev.target.closest('.report-item-include-checkbox');
+    if (!cb) return;
+    const id = cb.dataset.expenseId;
+    if (cb.checked) state.reportExcludedIds.delete(id); else state.reportExcludedIds.add(id);
+    renderReportItemsSection();
+    refreshReportSummary();
+  });
+
+  el.reportBody.addEventListener('input', (ev) => {
+    if (ev.target.id !== 'reportNotesInput') return;
+    const text = ev.target.value;
+    $('reportNotesPrint').textContent = text;
+    $('reportNotesBlock').classList.toggle('has-notes', !!text.trim());
+  });
+
+  // Saved on blur ('change'), not per keystroke. Item notes update their print copy in
+  // place instead of re-rendering, since a re-render would swallow the click that
+  // caused the blur (e.g. straight onto an Include checkbox).
+  el.reportBody.addEventListener('change', async (ev) => {
+    const t = ev.target;
+    if (t.id === 'reportNotesInput' && currentReportContext) {
+      const trip = currentReportContext.trip;
+      trip.reportNotes = t.value.trim();
+      await DB.putTrip(trip);
+    } else if (t.classList.contains('report-item-note-input')) {
+      const expense = state.allExpenses.find((e) => e.id === t.dataset.expenseId);
+      if (!expense) return;
+      expense.reportNote = t.value.trim();
+      await DB.putExpense(expense);
+      const printEl = t.closest('.report-item').querySelector('.report-item-note');
+      if (printEl) printEl.textContent = expense.reportNote;
+    }
+  });
 
   function defaultReportDateRange(trip, expenses) {
     const sorted = [...expenses].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -1599,6 +1679,7 @@
   function openReportModal(trip = state.trip, expenses = activeExpenses(), preparer = null) {
     currentReportContext = { trip, expenses };
     reportSortMode = 'date';
+    state.reportExcludedIds = new Set();
 
     const spent = totalSpent(expenses);
     const budget = trip.budget || 0;
@@ -1634,15 +1715,20 @@
       ${trip.reportShowSummary === false ? '' : `
         <div class="report-summary">
           ${trip.countMode === 'countup' ? `
-            <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Total Spent</div></div>
+            <div><div class="num" id="reportSummarySpent">${fmtMoney(spent)}</div><div class="lbl">Total Spent</div></div>
           ` : `
             <div><div class="num">${fmtMoney(budget)}</div><div class="lbl">Budget</div></div>
-            <div><div class="num">${fmtMoney(spent)}</div><div class="lbl">Spent</div></div>
-            <div><div class="num">${fmtMoney(remaining)}</div><div class="lbl">${remaining < 0 ? 'Over' : 'Remaining'}</div></div>
+            <div><div class="num" id="reportSummarySpent">${fmtMoney(spent)}</div><div class="lbl">Spent</div></div>
+            <div><div class="num" id="reportSummaryRemaining">${fmtMoney(remaining)}</div><div class="lbl" id="reportSummaryRemainingLbl">${remaining < 0 ? 'Over' : 'Remaining'}</div></div>
           `}
         </div>
       `}
-      ${trip.reportShowBreakdown === false ? '' : reportCategoryBreakdownHtml(expenses, trip.categoryBudgets || {})}
+      ${trip.reportShowBreakdown === false ? '' : `<div id="reportBreakdownBox">${reportCategoryBreakdownHtml(expenses, trip.categoryBudgets || {})}</div>`}
+      <div class="report-notes-block${trip.reportNotes ? ' has-notes' : ''}" id="reportNotesBlock">
+        <div class="report-section-title">Notes</div>
+        <textarea id="reportNotesInput" class="report-notes-input no-print" rows="3" placeholder="Add notes for the whole report (printed on the PDF)…">${escapeHtml(trip.reportNotes || '')}</textarea>
+        <div class="report-notes-print print-only" id="reportNotesPrint">${escapeHtml(trip.reportNotes || '')}</div>
+      </div>
       ${expenses.length ? `
         <div class="report-sort-row no-print">
           <span class="report-section-title">Sort</span>
@@ -1651,6 +1737,7 @@
             <button type="button" class="report-sort-btn" id="reportSortCategoryBtn">🏷️ Category</button>
           </div>
         </div>
+        <p class="field-help no-print">Uncheck any receipt below to leave it out of the CSV/PDF — nothing is deleted.</p>
       ` : ''}
       <div id="reportItemsContainer">${renderReportItemsHtml(expenses, 'date')}</div>
     `;

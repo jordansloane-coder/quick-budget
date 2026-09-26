@@ -25,6 +25,7 @@
     spentLabel: $('spentLabel'), budgetLabel: $('budgetLabel'), tripLabel: $('tripLabel'),
     budgetProgressWrap: $('budgetProgressWrap'),
     perDiemWrap: $('perDiemWrap'), perDiemAmount: $('perDiemAmount'), perDiemSub: $('perDiemSub'),
+    categoryBudgetsWrap: $('categoryBudgetsWrap'),
     countdownWrap: $('countdownWrap'), tripCountdown: $('tripCountdown'),
     expenseList: $('expenseList'), emptyState: $('emptyState'), countPill: $('countPill'),
     reimbursementFilterBtn: $('reimbursementFilterBtn'),
@@ -66,6 +67,7 @@
 
     settingsModalOverlay: $('settingsModalOverlay'), tripNameInput: $('tripNameInput'),
     budgetInput: $('budgetInput'), budgetField: $('budgetField'), perDiemInput: $('perDiemInput'),
+    categoryBudgetRows: $('categoryBudgetRows'), addCategoryBudgetBtn: $('addCategoryBudgetBtn'), scanContractBtn: $('scanContractBtn'),
     mileageEnabledInput: $('mileageEnabledInput'), mileageRateField: $('mileageRateField'), mileageRateInput: $('mileageRateInput'),
     autoReimburseInput: $('autoReimburseInput'),
     apiKeyInput: $('apiKeyInput'), saveSettingsBtn: $('saveSettingsBtn'),
@@ -133,6 +135,7 @@
   };
   let pendingTripDates = { start: null, end: null };    // being edited for the active trip, in Settings
   let pendingCountMode = 'countdown';    // being edited for the active trip, in Settings
+  let pendingCategoryBudgets = [];   // [{category, amount}], being edited for the active trip, in Settings
 
   // ---------- utils ----------
   const fmtMoney = (n) => `$${(Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -301,6 +304,7 @@
     }
 
     renderPerDiem();
+    renderCategoryBudgets();
     el.mileageQuickAddWrap.style.display = state.trip.mileageEnabled ? '' : 'none';
 
     el.bigNumber.classList.add('pulse');
@@ -321,6 +325,31 @@
     el.perDiemAmount.textContent = remaining < 0 ? `${fmtMoney(Math.abs(remaining))} over` : `${fmtMoney(remaining)} left`;
     el.perDiemAmount.classList.toggle('bad', remaining < 0);
     el.perDiemSub.textContent = `${fmtMoney(spentToday)} of ${fmtMoney(rate)}/day`;
+  }
+
+  function renderCategoryBudgets() {
+    const budgets = state.trip.categoryBudgets || {};
+    const cats = Object.keys(budgets).filter((cat) => budgets[cat] > 0);
+    el.categoryBudgetsWrap.innerHTML = '';
+    if (cats.length === 0) return;
+
+    const expenses = activeExpenses();
+    for (const cat of cats) {
+      const budget = budgets[cat];
+      const spent = expenses.filter((e) => (e.category || 'Other') === cat).reduce((sum, e) => sum + e.amount, 0);
+      const remaining = budget - spent;
+
+      const pill = document.createElement('div');
+      pill.className = 'category-budget-pill';
+      pill.innerHTML = `
+        <div class="category-budget-pill-row">
+          <span class="category-budget-pill-label">${escapeHtml(cat)}</span>
+          <span class="category-budget-pill-amount${remaining < 0 ? ' bad' : ''}">${remaining < 0 ? `${fmtMoney(Math.abs(remaining))} over` : `${fmtMoney(remaining)} left`}</span>
+        </div>
+        <div class="category-budget-pill-sub">${fmtMoney(spent)} of ${fmtMoney(budget)}</div>
+      `;
+      el.categoryBudgetsWrap.appendChild(pill);
+    }
   }
 
   const CATEGORY_EMOJI = { Food: '🍔', Groceries: '🛒', Gas: '⛽️', Lodging: '🛏️', Supplies: '🎬', Transport: '🚗', Mileage: '🛣️', Other: '🧾' };
@@ -817,6 +846,10 @@
       el.scanModalTitle.textContent = 'Read Travel Document';
       el.scanChooseHint.textContent = 'Take a photo of a hotel confirmation, boarding pass, rental agreement, or any other travel document. Claude will try to read the details for you.';
       el.scanLoadingHint.textContent = 'Reading document…';
+    } else if (scanMode === 'contract') {
+      el.scanModalTitle.textContent = 'Scan Contract';
+      el.scanChooseHint.textContent = 'Take a photo of the contract or budget page with the itemized fee table. Claude will try to pull out the spendable line items (fuel, hotel, parking, etc.) as category budgets for you to review.';
+      el.scanLoadingHint.textContent = 'Reading contract…';
     } else {
       el.scanModalTitle.textContent = 'Scan Receipt';
       el.scanChooseHint.textContent = 'Take a photo of your receipt, or choose one from your library. Claude will try to read the vendor, total, date and category for you.';
@@ -877,9 +910,24 @@
     }
   }
 
+  // Contract line items get merged into the in-progress category budget rows in Settings —
+  // nothing is written to the trip until Settings' own Save is clicked.
+  async function applyParsedItemsToCategoryBudgets(items) {
+    for (const item of items) {
+      const existing = allCategories().find((c) => c.toLowerCase() === item.label.toLowerCase());
+      const category = existing || await addCustomCategory(item.label);
+      if (!category) continue;
+      const row = pendingCategoryBudgets.find((r) => r.category === category);
+      if (row) row.amount = item.amount;
+      else pendingCategoryBudgets.push({ category, amount: item.amount });
+    }
+    renderCategoryBudgetRows();
+  }
+
   el.scanBtn.addEventListener('click', () => { scanMode = 'expense'; scanFillTarget = 'new'; resetScanModal(); openModal(el.scanModalOverlay); });
   el.aiReadBtn.addEventListener('click', () => { scanMode = 'expense'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
   el.travelReadFromPhotoBtn.addEventListener('click', () => { scanMode = 'travel'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
+  el.scanContractBtn.addEventListener('click', () => { scanMode = 'contract'; scanFillTarget = 'inline'; resetScanModal(); openModal(el.scanModalOverlay); });
   el.scanCameraBtn.addEventListener('click', () => el.scanCameraInput.click());
   el.scanLibraryBtn.addEventListener('click', () => el.scanLibraryInput.click());
   el.scanNoKeySettingsLink.addEventListener('click', () => {
@@ -899,6 +947,8 @@
         if (scanMode === 'travel') {
           applyPhotoToTravelForm(small);
           showToast('Photo attached — add an API key in Settings to auto-fill details.');
+        } else if (scanMode === 'contract') {
+          showToast('Add an API key in Settings to scan a contract.');
         } else if (scanFillTarget === 'inline') {
           applyPhotoToOpenExpenseModal(small);
           showToast('Photo attached — add an API key in Settings to auto-fill details.');
@@ -919,6 +969,18 @@
         applyParsedToTravelForm(parsed, small);
         const missing = ['name', 'confirmationNumber', 'startAt'].filter((k) => parsed[k] == null);
         showToast(missing.length ? 'Got most of it — check the highlighted fields.' : 'Document read. Review and save.');
+        return;
+      }
+
+      if (scanMode === 'contract') {
+        const items = await ClaudeReceipts.parseContractBudget(small, state.settings.apiKey);
+        closeModal(el.scanModalOverlay);
+        if (items.length === 0) {
+          showToast('Could not find a line-item budget on that page — add rows manually.');
+          return;
+        }
+        await applyParsedItemsToCategoryBudgets(items);
+        showToast(`Found ${items.length} line item${items.length === 1 ? '' : 's'} — review before saving.`);
         return;
       }
 
@@ -954,6 +1016,8 @@
     closeModal(el.scanModalOverlay);
     if (scanMode === 'travel') {
       if (scanPendingPhoto) applyPhotoToTravelForm(scanPendingPhoto);
+    } else if (scanMode === 'contract') {
+      // Nothing to attach — the review rows in Settings are untouched, add manually instead.
     } else if (scanFillTarget === 'inline') {
       if (scanPendingPhoto) applyPhotoToOpenExpenseModal(scanPendingPhoto);
     } else {
@@ -1030,10 +1094,45 @@
     if (budgetFieldEl) budgetFieldEl.style.display = mode === 'countup' ? 'none' : '';
   }
 
+  function renderCategoryBudgetRows() {
+    el.categoryBudgetRows.innerHTML = '';
+    pendingCategoryBudgets.forEach((row, idx) => {
+      const div = document.createElement('div');
+      div.className = 'category-budget-row';
+      const options = allCategories().map((cat) =>
+        `<option value="${escapeHtml(cat)}"${cat === row.category ? ' selected' : ''}>${escapeHtml(cat)}</option>`
+      ).join('');
+      div.innerHTML = `
+        <select class="cb-category">${options}</select>
+        <div class="amount-input-wrap">
+          <span class="dollar-sign">$</span>
+          <input type="number" inputmode="decimal" step="0.01" min="0" class="cb-amount" placeholder="0" value="${row.amount != null ? row.amount : ''}">
+        </div>
+        <button type="button" class="icon-btn category-budget-row-remove" aria-label="Remove category budget">✕</button>
+      `;
+      div.querySelector('.cb-category').addEventListener('change', (e) => { pendingCategoryBudgets[idx].category = e.target.value; });
+      div.querySelector('.cb-amount').addEventListener('input', (e) => { pendingCategoryBudgets[idx].amount = e.target.value; });
+      div.querySelector('.category-budget-row-remove').addEventListener('click', () => {
+        pendingCategoryBudgets.splice(idx, 1);
+        renderCategoryBudgetRows();
+      });
+      el.categoryBudgetRows.appendChild(div);
+    });
+  }
+
+  el.addCategoryBudgetBtn.addEventListener('click', () => {
+    const used = new Set(pendingCategoryBudgets.map((r) => r.category));
+    const next = allCategories().find((c) => !used.has(c)) || allCategories()[0];
+    pendingCategoryBudgets.push({ category: next, amount: '' });
+    renderCategoryBudgetRows();
+  });
+
   function openSettingsModal() {
     el.tripNameInput.value = state.trip.name || '';
     el.budgetInput.value = state.trip.budget != null ? state.trip.budget : '';
     el.perDiemInput.value = state.trip.perDiemRate != null ? state.trip.perDiemRate : '';
+    pendingCategoryBudgets = Object.entries(state.trip.categoryBudgets || {}).map(([category, amount]) => ({ category, amount }));
+    renderCategoryBudgetRows();
     el.mileageEnabledInput.checked = !!state.trip.mileageEnabled;
     el.mileageRateField.style.display = state.trip.mileageEnabled ? '' : 'none';
     el.mileageRateInput.value = state.trip.mileageRate != null ? state.trip.mileageRate : '';
@@ -1076,11 +1175,17 @@
     const budget = parseFloat(el.budgetInput.value);
     const perDiemRate = parseFloat(el.perDiemInput.value);
     const mileageRate = parseFloat(el.mileageRateInput.value);
+    const categoryBudgets = {};
+    for (const row of pendingCategoryBudgets) {
+      const amt = parseFloat(row.amount);
+      if (row.category && !isNaN(amt) && amt > 0) categoryBudgets[row.category] = amt;
+    }
     const updatedTrip = {
       ...state.trip,
       name: el.tripNameInput.value.trim() || 'Trip Budget',
       budget: isNaN(budget) ? DEFAULT_BUDGET : budget,
       perDiemRate: isNaN(perDiemRate) ? null : perDiemRate,
+      categoryBudgets,
       mileageEnabled: el.mileageEnabledInput.checked,
       mileageRate: isNaN(mileageRate) ? null : mileageRate,
       autoReimburse: el.autoReimburseInput.checked,
@@ -1217,6 +1322,7 @@
       name: '',
       budget: DEFAULT_BUDGET,
       perDiemRate: null,
+      categoryBudgets: {},
       mileageEnabled: false,
       mileageRate: null,
       autoReimburse: false,
@@ -1330,18 +1436,23 @@
     return Object.entries(totals).sort((a, b) => b[1] - a[1]); // biggest category first
   }
 
-  function reportCategoryBreakdownHtml(expenses) {
+  function reportCategoryBreakdownHtml(expenses, categoryBudgets = {}) {
     if (expenses.length === 0) return '';
     const rows = categoryTotals(expenses);
     return `
       <div class="report-breakdown">
         <div class="report-section-title">By Category</div>
-        ${rows.map(([cat, total]) => `
-          <div class="report-breakdown-row">
-            <span>${escapeHtml(cat)}</span>
-            <span>${fmtMoney(total)}</span>
-          </div>
-        `).join('')}
+        ${rows.map(([cat, total]) => {
+          const budget = categoryBudgets[cat];
+          const over = budget != null && total > budget;
+          return `
+            <div class="report-breakdown-row">
+              <span>${escapeHtml(cat)}</span>
+              <span class="${over ? 'over-budget' : ''}">${fmtMoney(total)}</span>
+            </div>
+            ${budget != null ? `<div class="report-breakdown-budget-note">${over ? `${fmtMoney(total - budget)} over` : `${fmtMoney(budget - total)} left`} of ${fmtMoney(budget)} budgeted</div>` : ''}
+          `;
+        }).join('')}
       </div>
     `;
   }
@@ -1531,7 +1642,7 @@
           `}
         </div>
       `}
-      ${trip.reportShowBreakdown === false ? '' : reportCategoryBreakdownHtml(expenses)}
+      ${trip.reportShowBreakdown === false ? '' : reportCategoryBreakdownHtml(expenses, trip.categoryBudgets || {})}
       ${expenses.length ? `
         <div class="report-sort-row no-print">
           <span class="report-section-title">Sort</span>

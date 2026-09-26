@@ -28,6 +28,13 @@ Respond with ONLY raw JSON, no markdown fences, no commentary, matching exactly 
 {"before": number|null, "after": number|null}
 Use the whole number of miles/km shown (ignore any small decimal digit shown in a different color if present, just use the main digits). If a reading truly cannot be determined from its image, use null for it. Never fabricate a value.`;
 
+  const CONTRACT_SYSTEM_PROMPT = `You read a photo of a contract, invoice, or budget/fee breakdown for someone on a work trip who wants to set spending caps for specific categories against it.
+Find the itemized budget table (often has columns like "Line Item" and "Amount"). For EACH line item that is an out-of-pocket, receipt-trackable expense category — things like fuel/gas, hotel/lodging, parking, rideshare/ground transportation, per diem, meals, supplies, equipment rentals — extract a short category label and its dollar amount.
+SKIP line items that are not spendable categories a traveler logs receipts against, such as flat crew/labor/day rates, service fees, overall totals or subtotals, and taxes.
+Respond with ONLY raw JSON, no markdown fences, no commentary, matching exactly this shape:
+{"items": [{"label": string, "amount": number}]}
+Keep each "label" short (1-3 words, Title Case, e.g. "Fuel", "Hotel", "Parking", "Ground Transportation", "Per Diem"), and give the exact dollar amount printed for that line item. If nothing on the page looks like a spendable line-item budget, return {"items": []}. Never fabricate a value.`;
+
   function stripDataUrlPrefix(dataUrl) {
     const match = /^data:(image\/[a-zA-Z+]+);base64,(.*)$/.exec(dataUrl);
     if (!match) throw new Error('Unexpected image format.');
@@ -148,6 +155,17 @@ Use the whole number of miles/km shown (ignore any small decimal digit shown in 
         before: typeof parsed.before === 'number' ? parsed.before : null,
         after: typeof parsed.after === 'number' ? parsed.after : null,
       };
+    },
+
+    async parseContractBudget(imageDataUrl, apiKey) {
+      const parsed = await callClaudeVision(
+        imageDataUrl, apiKey, CONTRACT_SYSTEM_PROMPT,
+        'Read this contract/budget document and return the JSON described in your instructions.'
+      );
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+      return items
+        .filter((it) => it && typeof it.label === 'string' && typeof it.amount === 'number')
+        .map((it) => ({ label: it.label, amount: it.amount }));
     },
   };
 })();

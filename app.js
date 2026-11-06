@@ -158,6 +158,30 @@
   };
   const locationLabel = (e) => e.address || (e.lat != null ? `${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}` : '');
 
+  // ---------- duplicate detection ----------
+  // Standalone on purpose (no app-specific globals) so it can be copied as-is into
+  // another project (e.g. On The Go) that wants the same check.
+  // Looks for an existing expense that's very likely the same purchase as `candidate`:
+  // an identical receipt photo, or the same amount + date + vendor (normalized).
+  // `candidate` and each item in `existingExpenses` just need { amount, date, vendor, photo, id }.
+  function findDuplicateExpense(candidate, existingExpenses, excludeId) {
+    const normVendor = (v) => (v || '').trim().toLowerCase();
+    const amountsMatch = (a, b) => Math.abs((a || 0) - (b || 0)) < 0.005;
+    const candidateVendor = normVendor(candidate.vendor);
+
+    for (const e of existingExpenses) {
+      if (excludeId && e.id === excludeId) continue;
+      if (candidate.photo && e.photo && candidate.photo === e.photo) return e;
+      if (
+        candidateVendor &&
+        amountsMatch(candidate.amount, e.amount) &&
+        candidate.date === e.date &&
+        normVendor(e.vendor) === candidateVendor
+      ) return e;
+    }
+    return null;
+  }
+
   function tripCountdownText(trip) {
     if (!trip.startDate) return '';
     const today = todayISO();
@@ -692,6 +716,20 @@
         perDiem: el.perDiemCheckboxInput.checked,
         createdAt: existing ? existing.createdAt : Date.now(),
       };
+
+      if (isNew) {
+        const dup = findDuplicateExpense(expense, state.allExpenses, null);
+        if (dup) {
+          const dupTrip = state.trips.find((t) => t.id === dup.tripId);
+          const whereText = dup.tripId === state.trip.id
+            ? 'already logged in this trip'
+            : `already logged in a past trip ("${dupTrip?.name || 'Unknown Trip'}")`;
+          const proceed = confirm(
+            `Looks like a duplicate of ${dup.vendor || 'Expense'} ${fmtMoney(dup.amount)} on ${dup.date} — ${whereText}.\n\nAdd this one anyway?`
+          );
+          if (!proceed) return;
+        }
+      }
 
       await DB.putExpense(expense);
       const idx = state.allExpenses.findIndex((e) => e.id === expense.id);

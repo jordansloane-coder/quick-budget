@@ -6,9 +6,9 @@
 
 const Saturation = (() => {
   // Saturation's server doesn't send CORS headers, so a browser can't call it directly.
-  // API_BASE points at a small relay that forwards requests and adds them. Change it here
-  // (one place) if the relay ever moves.
-  const API_BASE = 'https://next-api.saturation.io/v1';
+  // API_BASE is our own tiny relay (see /relay) that forwards to https://next-api.saturation.io/v1
+  // and adds them. It holds no secrets — the API key travels in each request.
+  const API_BASE = 'https://quick-budget-saturation-relay.netlify.app/v1';
   const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // Saturation Wallet's per-file limit
 
   // ---------- helpers ----------

@@ -1,3 +1,6 @@
 .DS_Store
 .claude/
 icons/source-art/
+
+# Local Netlify folder
+.netlify

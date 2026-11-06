@@ -43,6 +43,7 @@
     addCategoryRow: $('addCategoryRow'), newCategoryInput: $('newCategoryInput'),
     confirmAddCategoryBtn: $('confirmAddCategoryBtn'), cancelAddCategoryBtn: $('cancelAddCategoryBtn'),
     receiptPreviewWrap: $('receiptPreviewWrap'), receiptPreviewImg: $('receiptPreviewImg'),
+    photoViewerOverlay: $('photoViewerOverlay'), photoViewerImg: $('photoViewerImg'), photoViewerScroll: $('photoViewerScroll'),
     attachPhotoBtn: $('attachPhotoBtn'), removePhotoBtn: $('removePhotoBtn'), photoFileInput: $('photoFileInput'),
     excludeFromBudgetInput: $('excludeFromBudgetInput'), reimbursementInput: $('reimbursementInput'),
     companyExpenseInput: $('companyExpenseInput'),
@@ -222,6 +223,103 @@
   });
   document.querySelectorAll('.modal-overlay').forEach((overlay) => {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(overlay); });
+  });
+
+  // ---------- full-screen photo viewer ----------
+  // Self-contained: opened from any receipt photo shown anywhere in the app via
+  // openPhotoViewer(src). Drives its own pinch-zoom/pan in JS rather than relying on
+  // native browser zoom — the page's viewport meta sets maximum-scale=1 (intentional
+  // elsewhere, to stop accidental double-tap-zoom on the rest of the UI), and that
+  // can't be carved out for just one element, so native pinch would stay blocked here
+  // too if we didn't handle it ourselves.
+  let photoViewerScale = 1;
+  let photoViewerX = 0;
+  let photoViewerY = 0;
+  const photoViewerPointers = new Map(); // pointerId -> {x, y}
+  let photoViewerStartDist = 0;
+  let photoViewerStartScale = 1;
+  let photoViewerStartXY = { x: 0, y: 0 };
+
+  function openPhotoViewer(src) {
+    if (!src) return;
+    el.photoViewerImg.src = src;
+    photoViewerPointers.clear();
+    photoViewerScale = 1; photoViewerX = 0; photoViewerY = 0;
+    applyPhotoViewerTransform();
+    openModal(el.photoViewerOverlay);
+  }
+
+  function applyPhotoViewerTransform() {
+    el.photoViewerImg.style.transform = `translate(${photoViewerX}px, ${photoViewerY}px) scale(${photoViewerScale})`;
+  }
+
+  function clampPhotoViewerPan() {
+    // A soft bound proportional to zoom level, not exact pixel math against the
+    // rendered image size — plenty for a receipt viewer, keeps this simple.
+    const maxPan = 400 * (photoViewerScale - 1);
+    photoViewerX = Math.max(-maxPan, Math.min(maxPan, photoViewerX));
+    photoViewerY = Math.max(-maxPan, Math.min(maxPan, photoViewerY));
+  }
+
+  const photoViewerDist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  el.photoViewerScroll.addEventListener('pointerdown', (ev) => {
+    try { el.photoViewerScroll.setPointerCapture(ev.pointerId); } catch (e) { /* best-effort */ }
+    photoViewerPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    el.photoViewerImg.classList.add('panning');
+    if (photoViewerPointers.size === 2) {
+      const pts = Array.from(photoViewerPointers.values());
+      photoViewerStartDist = photoViewerDist(pts[0], pts[1]);
+      photoViewerStartScale = photoViewerScale;
+    } else if (photoViewerPointers.size === 1) {
+      photoViewerStartXY = { x: ev.clientX - photoViewerX, y: ev.clientY - photoViewerY };
+    }
+  });
+
+  el.photoViewerScroll.addEventListener('pointermove', (ev) => {
+    if (!photoViewerPointers.has(ev.pointerId)) return;
+    photoViewerPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    if (photoViewerPointers.size === 2) {
+      const pts = Array.from(photoViewerPointers.values());
+      const newDist = photoViewerDist(pts[0], pts[1]);
+      if (photoViewerStartDist > 0) {
+        photoViewerScale = Math.max(1, Math.min(5, photoViewerStartScale * (newDist / photoViewerStartDist)));
+      }
+      clampPhotoViewerPan();
+      applyPhotoViewerTransform();
+    } else if (photoViewerPointers.size === 1 && photoViewerScale > 1) {
+      photoViewerX = ev.clientX - photoViewerStartXY.x;
+      photoViewerY = ev.clientY - photoViewerStartXY.y;
+      clampPhotoViewerPan();
+      applyPhotoViewerTransform();
+    }
+  });
+
+  function photoViewerPointerEnd(ev) {
+    photoViewerPointers.delete(ev.pointerId);
+    el.photoViewerImg.classList.remove('panning');
+    if (photoViewerScale <= 1) {
+      photoViewerScale = 1; photoViewerX = 0; photoViewerY = 0;
+      applyPhotoViewerTransform();
+    }
+  }
+  el.photoViewerScroll.addEventListener('pointerup', photoViewerPointerEnd);
+  el.photoViewerScroll.addEventListener('pointercancel', photoViewerPointerEnd);
+
+  el.photoViewerScroll.addEventListener('dblclick', () => {
+    photoViewerScale = photoViewerScale > 1 ? 1 : 2.5;
+    photoViewerX = 0; photoViewerY = 0;
+    applyPhotoViewerTransform();
+  });
+
+  el.receiptPreviewImg.addEventListener('click', () => openPhotoViewer(el.receiptPreviewImg.src));
+
+  // Delegated so it covers every receipt photo the report renders (including the
+  // mileage before/after pair) without touching reportItemHtml's own markup.
+  el.reportBody.addEventListener('click', (ev) => {
+    const img = ev.target.closest('.report-item img');
+    if (img) openPhotoViewer(img.src);
   });
 
   function downscaleImage(dataUrl, maxDim = MAX_IMAGE_DIM, quality = 0.82) {

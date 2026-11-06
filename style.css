@@ -613,6 +613,41 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .modal-overlay.open { display: flex; animation: fadeIn 0.18s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+.photo-viewer-overlay {
+  z-index: 150;
+  background: rgba(0,0,0,0.94);
+  align-items: center;
+  backdrop-filter: none;
+}
+.photo-viewer-close {
+  position: absolute;
+  top: calc(14px + var(--safe-top));
+  right: 14px;
+  z-index: 2;
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+}
+.photo-viewer-close:active { background: rgba(255,255,255,0.26); }
+.photo-viewer-scroll {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+}
+.photo-viewer-scroll img {
+  max-width: 92%;
+  max-height: 92%;
+  object-fit: contain;
+  will-change: transform;
+  transition: transform 0.15s ease;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.photo-viewer-scroll img.panning { transition: none; }
+
 .modal {
   background: var(--bg-elevated);
   width: 100%;
@@ -935,6 +970,7 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   max-height: 220px;
   object-fit: cover;
   display: block;
+  cursor: zoom-in;
 }
 
 .mileage-photo-block { margin-bottom: 18px; }
@@ -1361,6 +1397,7 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   border: 1px solid #ddd;
   background: #fafafa;
   align-self: flex-start;
+  cursor: zoom-in;
 }
 .print-only { display: none; }
 .report-notes-block { margin: 18px 0 6px; }
@@ -1396,6 +1433,7 @@ textarea.report-notes-input:focus { outline: 2px solid var(--accent); outline-of
   #datePickerOverlay,
   #reportSetupOverlay,
   #travelInfoOverlay,
+  #photoViewerOverlay,
   .toast {
     display: none !important;
   }

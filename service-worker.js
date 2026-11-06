@@ -5,15 +5,16 @@
 // the <script>/<link> tags in index.html — that busts Netlify's CDN cache and
 // the browser's plain HTTP cache, independent of this service worker's own
 // cache-first strategy below (both layers can otherwise serve stale JS/CSS).
-const CACHE_NAME = 'quick-budget-v37';
+const CACHE_NAME = 'quick-budget-v40';
 const SHELL_FILES = [
   './',
   './index.html',
-  './style.css?v=39',
-  './app.js?v=39',
-  './db.js?v=39',
-  './claude.js?v=39',
-  './datepicker.js?v=39',
+  './style.css?v=40',
+  './app.js?v=40',
+  './db.js?v=40',
+  './claude.js?v=40',
+  './saturation.js?v=40',
+  './datepicker.js?v=40',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',

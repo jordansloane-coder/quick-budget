@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quick Budget">
-<link rel="stylesheet" href="style.css?v=39">
+<link rel="stylesheet" href="style.css?v=40">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -397,6 +397,16 @@
       </div>
 
       <div class="settings-section">
+        <span class="field-label section-label">Saturation</span>
+        <label class="field" style="margin-bottom:0;">
+          <span class="field-label">API key <span class="field-optional">(lets Export send expenses + receipts to Saturation)</span></span>
+          <input type="password" id="saturationKeyInput" placeholder="Paste the key from Pat" autocomplete="off">
+          <p class="field-help" id="saturationKeyStatus">Stored only on this device (and in your Google Drive backup). Not part of the app's code.</p>
+        </label>
+        <button type="button" class="secondary-btn" id="saturationTestBtn" style="width:100%;margin-top:8px;">Test connection</button>
+      </div>
+
+      <div class="settings-section">
         <span class="field-label section-label">Troubleshooting</span>
         <p class="field-help">If a new feature isn't showing up after an update, your device may be stuck on an old cached copy of the app. This clears that cache and reloads — your trips and expenses are stored separately and are never affected.</p>
         <button type="button" class="secondary-btn" id="forceRefreshBtn" style="width:100%;">🔄 Force Refresh App</button>
@@ -422,6 +432,39 @@
       <button class="icon-btn" data-close="reportSetupOverlay">✕</button>
     </div>
     <div class="modal-body">
+      <span class="field-label section-label">Export as <span class="field-optional">(tick any combination)</span></span>
+      <label class="checkbox-row">
+        <input type="checkbox" id="fmtPdfInput" checked>
+        <span>PDF report <span class="field-optional">(for the client — you review it first)</span></span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="fmtCsvInput">
+        <span>CSV spreadsheet</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="fmtSaturationInput">
+        <span>Send to Saturation <span class="field-optional">(each expense + its receipt, straight into your project)</span></span>
+      </label>
+      <div id="saturationSection" style="display:none;margin:4px 0 10px 30px;">
+        <div id="satNoKeyRow" style="display:none;">
+          <label class="field">
+            <span class="field-label">Saturation API key <span class="field-optional">(one-time — saved on this device)</span></span>
+            <input type="password" id="satInlineKeyInput" placeholder="Paste the key Pat gave you" autocomplete="off">
+          </label>
+          <button type="button" class="secondary-btn" id="satInlineKeySaveBtn" style="margin-bottom:10px;">Save key</button>
+        </div>
+        <label class="field" id="satProjectField">
+          <span class="field-label">Saturation project</span>
+          <input type="text" id="saturationProjectInput" list="saturationProjectList" placeholder="Start typing the project name" autocomplete="off">
+          <datalist id="saturationProjectList"></datalist>
+          <p class="field-help" id="saturationProjectHelp"></p>
+        </label>
+      </div>
+      <label class="checkbox-row" style="margin-bottom:16px;">
+        <input type="checkbox" id="fmtZipInput">
+        <span>Saturation folder (.zip) <span class="field-optional">(receipts renamed + a CSV — unzip and drag into Saturation yourself)</span></span>
+      </label>
+
       <span class="field-label section-label">Include</span>
       <label class="checkbox-row">
         <input type="checkbox" id="reportIncludeReimbursementInput" checked>
@@ -489,8 +532,7 @@
       </label>
     </div>
     <div class="modal-footer">
-      <button class="secondary-btn" id="setupExportCsvBtn">Export CSV</button>
-      <button class="primary-btn" id="generateReportBtn">Generate Report (PDF)</button>
+      <button class="primary-btn" id="generateReportBtn">Export</button>
     </div>
   </div>
 </div>
@@ -501,12 +543,28 @@
     <div class="modal-header no-print">
       <h3>Trip Report</h3>
       <div class="modal-header-actions">
-        <button class="secondary-btn" id="exportReportCsvBtn">CSV</button>
         <button class="primary-btn" id="printReportBtn">PDF / Print</button>
         <button class="icon-btn" data-close="reportModalOverlay">✕</button>
       </div>
     </div>
     <div class="modal-body report-body" id="reportBody"></div>
+  </div>
+</div>
+
+<!-- Saturation send progress -->
+<div class="modal-overlay" id="satProgressOverlay">
+  <div class="modal modal-narrow">
+    <div class="modal-header">
+      <h3>Sending to Saturation</h3>
+    </div>
+    <div class="modal-body">
+      <p id="satProgressText" style="margin:0 0 10px;"></p>
+      <div class="progress-track"><div class="progress-fill" id="satProgressFill" style="width:0%"></div></div>
+      <div class="field-help" id="satProgressErrors" style="margin-top:10px;white-space:pre-wrap;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="primary-btn" id="satProgressCloseBtn" disabled>Close</button>
+    </div>
   </div>
 </div>
 
@@ -612,9 +670,10 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="db.js?v=39"></script>
-<script src="claude.js?v=39"></script>
-<script src="datepicker.js?v=39"></script>
-<script src="app.js?v=39"></script>
+<script src="db.js?v=40"></script>
+<script src="claude.js?v=40"></script>
+<script src="saturation.js?v=40"></script>
+<script src="datepicker.js?v=40"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
   const MAX_IMAGE_DIM = 1400;
 
   const state = {
-    settings: { apiKey: '' },
+    settings: { apiKey: '', saturationKey: '' },
     trip: null,       // the active trip record { id, name, budget, createdAt, archivedAt }
     trips: [],         // every trip ever created, active and banked
     allExpenses: [],    // every expense ever logged, across all trips (tagged by tripId)
@@ -81,10 +81,15 @@
     pastTripsSection: $('pastTripsSection'), pastTripsList: $('pastTripsList'),
 
     reportModalOverlay: $('reportModalOverlay'), reportBody: $('reportBody'), printReportBtn: $('printReportBtn'),
-    exportReportCsvBtn: $('exportReportCsvBtn'),
+    satProgressOverlay: $('satProgressOverlay'), satProgressText: $('satProgressText'),
+    satProgressFill: $('satProgressFill'), satProgressErrors: $('satProgressErrors'), satProgressCloseBtn: $('satProgressCloseBtn'),
 
     reportSetupOverlay: $('reportSetupOverlay'), generateReportBtn: $('generateReportBtn'),
-    setupExportCsvBtn: $('setupExportCsvBtn'),
+    fmtPdfInput: $('fmtPdfInput'), fmtCsvInput: $('fmtCsvInput'), fmtSaturationInput: $('fmtSaturationInput'), fmtZipInput: $('fmtZipInput'),
+    saturationSection: $('saturationSection'), satNoKeyRow: $('satNoKeyRow'), satInlineKeyInput: $('satInlineKeyInput'),
+    satInlineKeySaveBtn: $('satInlineKeySaveBtn'), saturationProjectInput: $('saturationProjectInput'),
+    saturationProjectList: $('saturationProjectList'), saturationProjectHelp: $('saturationProjectHelp'),
+    saturationKeyInput: $('saturationKeyInput'), saturationKeyStatus: $('saturationKeyStatus'), saturationTestBtn: $('saturationTestBtn'),
     reportIncludeReimbursementInput: $('reportIncludeReimbursementInput'),
     reportIncludeCompanyInput: $('reportIncludeCompanyInput'),
     reportIncludeOtherInput: $('reportIncludeOtherInput'),
@@ -1538,6 +1543,7 @@
     renderBudgetLinesList();
     el.autoReimburseInput.checked = !!state.trip.autoReimburse;
     el.apiKeyInput.value = state.settings.apiKey || '';
+    el.saturationKeyInput.value = state.settings.saturationKey || '';
     pendingCountMode = state.trip.countMode === 'countup' ? 'countup' : 'countdown';
     renderCountModeToggle(el.countModeDownBtn, el.countModeUpBtn, pendingCountMode, el.budgetField);
     renderPastTrips();
@@ -1622,9 +1628,11 @@
       countMode: pendingCountMode,
     };
     state.settings.apiKey = el.apiKeyInput.value.trim();
+    state.settings.saturationKey = el.saturationKeyInput.value.trim();
 
     await DB.putTrip(updatedTrip);
     await DB.setMeta('apiKey', state.settings.apiKey);
+    await DB.setMeta('saturationKey', state.settings.saturationKey);
 
     state.trip = updatedTrip;
     const idx = state.trips.findIndex((t) => t.id === updatedTrip.id);
@@ -1823,10 +1831,8 @@
 
   $('exportCsvBtn').addEventListener('click', () => {
     if (activeExpenses().length === 0) { showToast('No expenses to export yet.'); return; }
+    openReportSetupModal.csvFirst = true;
     openReportSetupModal();
-  });
-  el.exportReportCsvBtn.addEventListener('click', () => {
-    if (currentReportContext) exportCsv(currentReportContext.trip, includedReportExpenses());
   });
 
   // ---------- export: printable report ----------
@@ -2034,6 +2040,16 @@
     el.reportIncludeOtherInput.checked = true;
     updateReportIncludePreview();
 
+    // Format checkboxes: PDF is the default; the menu's "Export CSV" entry pre-ticks CSV instead.
+    el.fmtPdfInput.checked = !openReportSetupModal.csvFirst;
+    el.fmtCsvInput.checked = !!openReportSetupModal.csvFirst;
+    el.fmtZipInput.checked = false;
+    el.fmtSaturationInput.checked = false;
+    el.saturationProjectInput.value = ''; // every job is a different project — never carry the last one over
+    openReportSetupModal.csvFirst = false;
+    updateExportButtonLabel();
+    refreshSaturationSection();
+
     el.reportTitleInput.value = trip.reportTitle || trip.name || 'Trip Budget';
     el.reportSubtitleInput.value = trip.reportSubtitle || '';
     el.reportDatesInput.value = trip.reportDatesText || defaultReportDateRange(trip, expenses);
@@ -2054,20 +2070,183 @@
     openModal(el.reportSetupOverlay);
   }
 
-  el.setupExportCsvBtn.addEventListener('click', () => {
-    if (!pendingReportContext) return;
-    const filtered = filteredSetupExpenses();
-    if (filtered.length === 0) { showToast('No expenses match what\'s checked above.'); return; }
-    exportCsv(pendingReportContext.trip, filtered);
-    closeModal(el.reportSetupOverlay);
-    pendingReportContext = null;
+  // ---------- Saturation + multi-format export ----------
+  let satProjects = null;      // projects loaded for the current key
+  let satProjectsKey = '';     // the key satProjects was loaded with
+
+  function setSaturationKey(key) {
+    state.settings.saturationKey = key;
+    satProjects = null;
+    return DB.setMeta('saturationKey', key);
+  }
+
+  async function loadSaturationProjects(force = false) {
+    const key = state.settings.saturationKey;
+    if (!force && satProjects && satProjectsKey === key) return satProjects;
+    satProjects = await Saturation.listProjects(key);
+    satProjectsKey = key;
+    return satProjects;
+  }
+
+  async function refreshSaturationSection() {
+    const on = el.fmtSaturationInput.checked;
+    el.saturationSection.style.display = on ? '' : 'none';
+    if (!on) return;
+    const hasKey = !!state.settings.saturationKey;
+    el.satNoKeyRow.style.display = hasKey ? 'none' : '';
+    el.saturationProjectInput.disabled = !hasKey;
+    el.saturationProjectHelp.textContent = hasKey ? 'Loading your Saturation projects…' : 'Save your Saturation API key above first.';
+    if (!hasKey) return;
+    try {
+      const projects = await loadSaturationProjects();
+      el.saturationProjectList.innerHTML = projects.map((p) => `<option value="${escapeHtml(p.name)}"></option>`).join('');
+      el.saturationProjectHelp.textContent = projects.length
+        ? `${projects.length} project${projects.length === 1 ? '' : 's'} found — pick the one this job belongs to.`
+        : 'No projects found for this key.';
+    } catch (err) {
+      el.saturationProjectHelp.textContent = err.message;
+    }
+  }
+  el.fmtSaturationInput.addEventListener('change', refreshSaturationSection);
+
+  el.satInlineKeySaveBtn.addEventListener('click', async () => {
+    const key = el.satInlineKeyInput.value.trim();
+    if (!key) { showToast('Paste the key first.'); return; }
+    await setSaturationKey(key);
+    el.satInlineKeyInput.value = '';
+    refreshSaturationSection();
   });
+
+  el.saturationTestBtn.addEventListener('click', async () => {
+    const key = el.saturationKeyInput.value.trim();
+    if (!key) { el.saturationKeyStatus.textContent = 'Paste a key first.'; return; }
+    el.saturationTestBtn.disabled = true;
+    el.saturationKeyStatus.textContent = 'Testing…';
+    try {
+      const projects = await Saturation.listProjects(key);
+      await setSaturationKey(key);
+      el.saturationKeyStatus.textContent = `Connected ✓ — ${projects.length} project${projects.length === 1 ? '' : 's'} visible. Key saved.`;
+    } catch (err) {
+      el.saturationKeyStatus.textContent = err.message;
+    } finally {
+      el.saturationTestBtn.disabled = false;
+    }
+  });
+
+  function selectedExtras() {
+    return {
+      csv: el.fmtCsvInput.checked,
+      zip: el.fmtZipInput.checked,
+      saturation: el.fmtSaturationInput.checked,
+      pdf: el.fmtPdfInput.checked,
+    };
+  }
+
+  function updateExportButtonLabel() {
+    const f = selectedExtras();
+    const n = [f.pdf, f.csv, f.saturation, f.zip].filter(Boolean).length;
+    el.generateReportBtn.textContent = n === 0 ? 'Pick a format' : f.pdf && n === 1 ? 'Review Report (PDF)' : f.pdf ? `Review & Export (${n})` : n === 1 ? 'Export' : `Export (${n})`;
+    el.generateReportBtn.disabled = n === 0;
+  }
+  [el.fmtPdfInput, el.fmtCsvInput, el.fmtSaturationInput, el.fmtZipInput].forEach((cb) => cb.addEventListener('change', updateExportButtonLabel));
+
+  // Resolve the typed project name against Saturation's real project list.
+  async function resolveSaturationProject() {
+    if (!state.settings.saturationKey) { showToast('Save your Saturation API key first.'); return null; }
+    let projects;
+    try { projects = await loadSaturationProjects(); }
+    catch (err) { showToast(err.message, 5000); return null; }
+    const typed = el.saturationProjectInput.value;
+    const { project, reason, candidates } = Saturation.matchProject(projects, typed);
+    if (project) return project;
+    if (reason === 'empty') showToast('Pick which Saturation project this goes into.');
+    else if (reason === 'ambiguous') showToast(`More than one project matches — keep typing (${(candidates || []).slice(0, 3).map((p) => p.name).join(', ')}).`, 5000);
+    else showToast(`No Saturation project named "${typed.trim()}". Choose one from the list.`, 5000);
+    return null;
+  }
+
+  async function sendToSaturation(project, trip, expenses) {
+    const key = state.settings.saturationKey;
+    const pending = expenses.filter((e) => !(e.saturation && e.saturation.projectId === project.id && e.saturation.txnId
+      && (!e.photo || e.saturation.docIds.photo) && (!e.photo2 || e.saturation.docIds.photo2)));
+    const alreadySent = expenses.length - pending.length;
+    if (pending.length === 0) { showToast(`All ${expenses.length} were already sent to ${project.name}.`, 4000); return true; }
+
+    const total = pending.reduce((sum, e) => sum + e.amount, 0);
+    const ok = confirm(
+      `Send ${pending.length} expense${pending.length === 1 ? '' : 's'} (${fmtMoney(total)}) to the Saturation project "${project.name}"?\n\n` +
+      `Each is created as a transaction with its receipt attached.` +
+      (alreadySent ? `\n${alreadySent} already sent earlier will be skipped.` : '') +
+      `\n\nThis writes to your company's books, so check the project name.`
+    );
+    if (!ok) return false;
+
+    el.satProgressErrors.textContent = '';
+    el.satProgressCloseBtn.disabled = true;
+    el.satProgressFill.style.width = '0%';
+    openModal(el.satProgressOverlay);
+
+    const failures = [];
+    let done = 0;
+    let fatal = null;
+    for (const e of pending) {
+      el.satProgressText.textContent = `Sending ${done + 1} of ${pending.length}: ${e.vendor}…`;
+      try {
+        await Saturation.sendExpense(key, project, e, {
+          tripName: trip.name || '',
+          location: locationLabel(e),
+          onSaved: (saved) => DB.putExpense(saved),
+        });
+        done++;
+      } catch (err) {
+        if (err.code === 'auth' || err.code === 'network' || err.code === 'forbidden') { fatal = err; break; }
+        failures.push(`${e.vendor} ${fmtMoney(e.amount)} (${e.date}): ${err.message}`);
+      }
+      el.satProgressFill.style.width = `${Math.round(((done + failures.length) / pending.length) * 100)}%`;
+    }
+    el.satProgressCloseBtn.disabled = false;
+
+    if (fatal) {
+      el.satProgressText.textContent = `Stopped after ${done} of ${pending.length}.`;
+      el.satProgressErrors.textContent = fatal.message + '\nNothing was duplicated — tap Export again to pick up where it left off.';
+      return false;
+    }
+    if (failures.length) {
+      el.satProgressText.textContent = `Sent ${done} of ${pending.length}. ${failures.length} had a problem:`;
+      el.satProgressErrors.textContent = failures.join('\n') + '\n\nTap Export again to retry just those.';
+      return false;
+    }
+    closeModal(el.satProgressOverlay);
+    showToast(`Sent ${done} expense${done === 1 ? '' : 's'} to ${project.name} ✓`, 4000);
+    return true;
+  }
+  el.satProgressCloseBtn.addEventListener('click', () => closeModal(el.satProgressOverlay));
+
+  async function exportSaturationZip(trip, expenses, projectName) {
+    showToast('Building folder…', 6000);
+    const blob = await Saturation.buildPackage(expenses, { projectName });
+    const base = (projectName || trip.name || 'trip').replace(/[^a-z0-9]+/gi, '-');
+    downloadBlob(blob, `${base}-saturation.zip`);
+    showToast(`Saved ${base}-saturation.zip — unzip it and drag the folder into Saturation.`, 5000);
+  }
+
+  // Runs every ticked non-PDF format. Resolves false if something needs attention (nothing else runs).
+  async function runExports(plan, trip, expenses) {
+    if (plan.csv) exportCsv(trip, expenses);
+    if (plan.zip) {
+      try { await exportSaturationZip(trip, expenses, plan.project ? plan.project.name : ''); }
+      catch (err) { showToast('Could not build the zip: ' + err.message, 5000); return false; }
+    }
+    if (plan.project) return sendToSaturation(plan.project, trip, expenses);
+    return true;
+  }
 
   el.generateReportBtn.addEventListener('click', async () => {
     if (!pendingReportContext) return;
     if (el.generateReportBtn.disabled) return;
     el.generateReportBtn.disabled = true;
     try {
+      const f = selectedExtras();
       const preparerName = el.preparerNameInput.value.trim();
       const preparerCompany = el.preparerCompanyInput.value.trim();
       const preparerPhone = el.preparerPhoneInput.value.trim();
@@ -2078,6 +2257,15 @@
       const { trip } = pendingReportContext;
       const expenses = filteredSetupExpenses();
       if (expenses.length === 0) { showToast('No expenses match what\'s checked above.'); return; }
+
+      // Check the Saturation project now, while the Export Options screen is still open.
+      let project = null;
+      if (f.saturation) {
+        project = await resolveSaturationProject();
+        if (!project) return;
+      }
+      const plan = { csv: f.csv, zip: f.zip, project };
+
       const updatedTrip = {
         ...trip,
         reportTitle: el.reportTitleInput.value.trim(),
@@ -2095,15 +2283,23 @@
       if (idx >= 0) state.trips[idx] = updatedTrip;
 
       closeModal(el.reportSetupOverlay);
-      openReportModal(updatedTrip, expenses, { preparerName, preparerCompany, preparerPhone });
+      if (f.pdf) {
+        // The review screen is where receipts get deselected, so the other formats run from
+        // there (on exactly what's left ticked) rather than from the unreviewed list.
+        openReportModal(updatedTrip, expenses, { preparerName, preparerCompany, preparerPhone }, plan);
+      } else {
+        await runExports(plan, updatedTrip, expenses);
+      }
       pendingReportContext = null;
     } finally {
-      el.generateReportBtn.disabled = false;
+      updateExportButtonLabel();
     }
   });
 
-  function openReportModal(trip = state.trip, expenses = activeExpenses(), preparer = null) {
-    currentReportContext = { trip, expenses };
+  function openReportModal(trip = state.trip, expenses = activeExpenses(), preparer = null, plan = null) {
+    currentReportContext = { trip, expenses, plan };
+    const extras = plan ? [plan.csv && 'CSV', plan.project && 'Saturation', plan.zip && 'zip'].filter(Boolean) : [];
+    el.printReportBtn.textContent = extras.length ? `Export PDF + ${extras.join(' + ')}` : 'PDF / Print';
     reportSortMode = 'date';
     state.reportExcludedIds = new Set();
 
@@ -2190,7 +2386,19 @@
     if (activeExpenses().length === 0) { showToast('No expenses to report yet.'); return; }
     openReportSetupModal();
   });
-  el.printReportBtn.addEventListener('click', () => window.print());
+  el.printReportBtn.addEventListener('click', async () => {
+    const ctx = currentReportContext;
+    if (ctx && ctx.plan && (ctx.plan.csv || ctx.plan.zip || ctx.plan.project)) {
+      const included = includedReportExpenses();
+      if (included.length === 0) { showToast('Every receipt is unchecked — nothing to export.'); return; }
+      el.printReportBtn.disabled = true;
+      try {
+        const ok = await runExports(ctx.plan, ctx.trip, included);
+        if (!ok) return; // Saturation needs attention; skip the PDF until it's sorted
+      } finally { el.printReportBtn.disabled = false; }
+    }
+    window.print();
+  });
 
   // ---------- travel info ----------
   function fmtDateTimeLocal(val) {
@@ -2438,6 +2646,8 @@
       expenses: state.allExpenses,
       checklist: state.allChecklist,
       travelInfo: state.allTravelInfo,
+      // So a restored phone can send to Saturation without asking Pat for a new key.
+      saturationKey: state.settings.saturationKey || '',
     };
   }
 
@@ -2492,6 +2702,10 @@
     for (const i of payload.checklist || []) await DB.putChecklistItem(i);
     for (const i of payload.travelInfo || []) await DB.putTravelInfo(i);
     if (payload.activeTripId) await DB.setMeta('activeTripId', payload.activeTripId);
+    if (payload.saturationKey && !state.settings.saturationKey) {
+      state.settings.saturationKey = payload.saturationKey;
+      await DB.setMeta('saturationKey', payload.saturationKey);
+    }
 
     const { trips, activeTrip } = await loadTripsAndActive();
     state.trips = trips;
@@ -2598,6 +2812,7 @@
 
   async function init() {
     state.settings.apiKey = await DB.getMeta('apiKey', '');
+    state.settings.saturationKey = await DB.getMeta('saturationKey', '');
     const { trips, activeTrip } = await loadTripsAndActive();
     state.trips = trips;
     state.trip = activeTrip;

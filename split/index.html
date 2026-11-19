@@ -67,8 +67,9 @@ button{cursor:pointer}
 .xfer .who{font-weight:600}.xfer .amt{font-weight:800;font-size:18px;font-variant-numeric:tabular-nums}
 textarea.out{width:100%;min-height:120px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px;resize:vertical}
 /* sheets */
-.scrim{position:fixed;inset:0;background:rgba(5,15,16,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--bg);width:100%;max-width:560px;max-height:94vh;max-height:94dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:20px 20px 0 0;padding:16px max(16px,env(safe-area-inset-left,0px)) calc(20px + env(safe-area-inset-bottom,0px));overscroll-behavior:contain}
+.sheeting .wrap,.sheeting .fab{display:none}
+.scrim{display:block}
+.sheet{max-width:560px;margin:0 auto;padding:8px 0 40px}
 .sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .sheet h2{font-size:20px}
 .field{display:flex;flex-direction:column;gap:6px;margin:14px 0}
@@ -249,12 +250,13 @@ let tt;
 function toast(m){ const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => { t.hidden = true; }, 3200); }
 let sheetKind = null, lastKind = null;
 function openSheet(html){
-  const old = $(".sheet"), top = old && lastKind === sheetKind ? old.scrollTop : 0;
-  $("#layer").innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  const keep = lastKind === sheetKind ? window.scrollY : 0;
+  $("#layer").innerHTML = `<div class="scrim"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  document.body.classList.add("sheeting");
   lastKind = sheetKind;
-  if (top) $(".sheet").scrollTop = top;
+  window.scrollTo(0, keep);
 }
-function closeSheet(){ $("#layer").innerHTML = ""; add = null; D = null; lastKind = null; }
+function closeSheet(){ $("#layer").innerHTML = ""; document.body.classList.remove("sheeting"); add = null; D = null; lastKind = null; window.scrollTo(0, 0); }
 const chips = (names, sel, act, sm) => names.map(n => `<button type="button" class="chip${sm ? " sm" : ""}${sel.includes(n) ? " on" : ""}" data-act="${act}" data-v="${esc(n)}">${esc(n)}</button>`).join("");
 
 /* ---------- photo prep ---------- */

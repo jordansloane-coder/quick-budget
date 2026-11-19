@@ -94,6 +94,11 @@ textarea{resize:vertical}
 .item{padding:10px;display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
 .item .r{display:grid;grid-template-columns:1fr 92px auto;gap:8px;align-items:center}
 .x{border:0;background:transparent;color:var(--muted);font-size:20px;padding:4px 8px}
+.steps{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.step{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 8px}
+.step span{flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.step b{min-width:20px;text-align:center;font-variant-numeric:tabular-nums}
+.step .x{font-size:22px;padding:2px 10px;border:1px solid var(--line);border-radius:10px;color:var(--fg)}
 .shares{padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-variant-numeric:tabular-nums}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:12px;z-index:40;max-width:90vw;font-size:14px}
 .err{color:var(--neg);font-size:14px;min-height:1px}
@@ -176,12 +181,13 @@ function alloc(amount, weights){
 function shares(e){
   const P = S.people, who = (e.who && e.who.length) ? e.who : P;
   const out = Object.fromEntries(P.map(p => [p, 0])), sub = {...out};
-  if (!e.items.length){ alloc(e.totalC, who.map(() => 1)).forEach((c, i) => out[who[i]] += c); return out; }
+  const wt = (m, p) => (m && m[p] > 0) ? m[p] : 1;
+  if (!e.items.length){ alloc(e.totalC, who.map(p => wt(e.wt, p))).forEach((c, i) => out[who[i]] += c); return out; }
   let itemsSum = 0;
   for (const it of e.items){
     const g = (it.who && it.who.length) ? it.who : who;
     itemsSum += it.priceC;
-    alloc(it.priceC, g.map(() => 1)).forEach((c, i) => { sub[g[i]] += c; });
+    alloc(it.priceC, g.map(p => (it.wt && it.wt[p] > 0) ? it.wt[p] : ((it.who && it.who.length) ? 1 : wt(e.wt, p)))).forEach((c, i) => { sub[g[i]] += c; });
   }
   const extra = e.totalC - itemsSum;
   const ws = P.map(p => Math.max(sub[p], 0));
@@ -222,7 +228,7 @@ function listView(){
   if (!S.expenses.length) return `<div class="card empty"><b>Add your first expense</b>Take a photo of a check or pick one from your library, say who paid and how it splits. Or add one with no receipt.</div>`;
   const rows = [...S.expenses].sort((a, b) => b.ts - a.ts).map(e => {
     const th = e.thumb ? `<img class="th" alt="" src="${e.thumb}">` : `<div class="th">$</div>`;
-    const split = e.items.some(i => i.who && i.who.length) ? "By item" : ((e.who && e.who.length && e.who.length < S.people.length) ? `${e.who.length} ways` : "Split equally");
+    const split = (e.wt && Object.keys(e.wt).length) ? "Unequal split" : e.items.some(i => i.who && i.who.length) ? "By item" : ((e.who && e.who.length && e.who.length < S.people.length) ? `${e.who.length} ways` : "Split equally");
     const payer = S.people.includes(e.payer) ? `${esc(e.payer)} paid` : `<span class="tag">Needs payer</span>`;
     return `<button class="card exp" data-act="edit" data-id="${e.id}">${th}<div style="min-width:0"><div class="t">${esc(e.title || "Expense")}</div><div class="m">${payer} · ${split}</div></div><div class="a">${fmt(e.totalC)}</div></button>`;
   }).join("");
@@ -329,7 +335,7 @@ Chosen in the app: payer = ${a.payer || "not chosen"}; split among = ${JSON.stri
 Receipt photo attached: ${hasPhoto ? "yes" : "no"}.
 
 JSON shape:
-{"title": short merchant or description, "total": number, "payer": name or null, "participants": [names], "items": [{"name": string, "price": number, "who": [names]}]}
+{"title": short merchant or description, "total": number, "payer": name or null, "participants": [names], "items": [{"name": string, "price": number, "who": [names], "weights": {name: number}}], "weights": {name: number}}
 
 Rules:
 - total = the final amount actually charged, including tax, tip and fees. If a tip was handwritten and a final total is written, use that. A typed total overrides the receipt. With no receipt, use the amount in the note or the typed total.
@@ -338,7 +344,8 @@ Rules:
 - items = the receipt's line items, one per line, price = that line's total before tax and tip. Skip subtotal, tax, tip and total lines. If there is no readable receipt, use [].
 - item.who is [] when the item is shared by all participants. Put names in who only when the note says specific people had that item. Match the note's wording to the closest receipt line.
 - If the note says some people had specific items and says nothing about the rest, give the remaining items to the participants who did not claim anything (all participants if everyone claimed something).
-- If the note says to split equally, leave every item's who as [].`;
+- If the note says to split equally, leave every item's who as [].
+- weights is only for an UNEQUAL split of shared things, as relative shares. Example: "I got 3 cigars, Matt got 1" gives weights {"Jordan":3,"Matt":1} and participants ["Jordan","Matt"]. Use the top-level weights for the whole bill, or an item's weights for one line shared unevenly. Leave out weights for equal splits.`;
 }
 function parseJson(t){
   const m = t.match(/```(?:json)?\s*([\s\S]*?)```/i); const raw = m ? m[1] : t;
@@ -413,10 +420,13 @@ function draftFrom(ai, a){
   if (who.length === P.length) who = [];
   const items = ((ai && ai.items) || []).filter(i => i && i.name != null).map(i => {
     let w = nms(i.who); if (w.length === P.length) w = [];
-    return {name: String(i.name), priceStr: (Number(i.price) || 0).toFixed(2), who: w};
+    return {name: String(i.name), priceStr: (Number(i.price) || 0).toFixed(2), who: w, wt: nw(i.weights)};
   });
+  const nw = o => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).map(([k, v]) => [nm(k), Number(v)]).filter(([k, v]) => k && v > 0));
+  const wtAll = nw(ai && ai.weights);
+  if (Object.keys(wtAll).length){ who = Object.keys(wtAll); if (who.length === P.length) who = []; }
   const tot = a.amount ? a.amount : (ai && Number(ai.total) > 0 ? Number(ai.total).toFixed(2) : "");
-  return {id: null, title: a.title.trim() || (ai && ai.title) || "Expense", payer: a.payer || nm(ai && ai.payer) || null, totalStr: tot, who, items, thumb: a.photo ? a.photo.thumb : null, note: a.note.trim()};
+  return {id: null, title: a.title.trim() || (ai && ai.title) || "Expense", payer: a.payer || nm(ai && ai.payer) || null, totalStr: tot, who, wt: wtAll, items, thumb: a.photo ? a.photo.thumb : null, note: a.note.trim()};
 }
 
 /* ---------- edit / review sheet ---------- */
@@ -424,11 +434,11 @@ let D = null, DOPT = {};
 function openEdit(d, opt){ D = d; DOPT = opt || {}; renderEdit(); }
 function edit(id){
   const e = S.expenses.find(x => x.id === id); if (!e) return;
-  openEdit({id: e.id, title: e.title, payer: e.payer, totalStr: (e.totalC / 100).toFixed(2), who: [...(e.who || [])], thumb: e.thumb, note: e.note || "", ts: e.ts,
-    items: e.items.map(i => ({name: i.name, priceStr: (i.priceC / 100).toFixed(2), who: [...(i.who || [])]}))}, {});
+  openEdit({id: e.id, title: e.title, payer: e.payer, totalStr: (e.totalC / 100).toFixed(2), who: [...(e.who || [])], wt: {...(e.wt || {})}, thumb: e.thumb, note: e.note || "", ts: e.ts,
+    items: e.items.map(i => ({name: i.name, priceStr: (i.priceC / 100).toFixed(2), who: [...(i.who || [])], wt: {...(i.wt || {})}}))}, {});
 }
 function draftToExpense(){
-  return {totalC: toC(D.totalStr), who: D.who, items: D.items.filter(i => i.name.trim() || toC(i.priceStr)).map(i => ({name: i.name.trim(), priceC: toC(i.priceStr), who: i.who}))};
+  return {totalC: toC(D.totalStr), who: D.who, wt: D.wt || {}, items: D.items.filter(i => i.name.trim() || toC(i.priceStr)).map(i => ({name: i.name.trim(), priceC: toC(i.priceStr), who: i.who, wt: i.wt || {}}))};
 }
 function sharesHtml(){
   const e = draftToExpense();
@@ -438,12 +448,18 @@ function sharesHtml(){
   const warn = e.items.length && extra < 0 ? `<div class="hint neg" style="grid-column:1/-1">Items add up to more than the total. Check the prices.</div>` : "";
   return S.people.map(p => `<div>${esc(p)}</div><div style="font-weight:700;text-align:right">${fmt(sh[p])}</div>`).join("") + note + warn;
 }
+const cnt = p => (D.who.length ? D.who.includes(p) : true) ? ((D.wt && D.wt[p]) || 1) : 0;
+function applyCounts(m){
+  const P = S.people, inn = P.filter(p => m[p] > 0); if (!inn.length) return;
+  D.who = inn.length === P.length ? [] : inn;
+  D.wt = new Set(inn.map(p => m[p])).size > 1 ? Object.fromEntries(inn.map(p => [p, m[p]])) : {};
+}
 function renderEdit(){
   sheetKind = "edit";
   const P = S.people;
   const items = D.items.map((it, i) => `
     <div class="card item"><div class="r"><input type="text" aria-label="Item name" data-f="iname" data-i="${i}" value="${esc(it.name)}" placeholder="Item"><input inputmode="decimal" aria-label="Item price" data-f="iprice" data-i="${i}" value="${esc(it.priceStr)}" placeholder="0.00"><button class="x" data-act="rmitem" data-i="${i}" aria-label="Remove item">×</button></div>
-    <div class="chips">${P.map(p => `<button type="button" class="chip sm${it.who.includes(p) ? " on" : ""}" data-act="itemwho" data-i="${i}" data-v="${esc(p)}">${esc(p)}</button>`).join("")}${it.who.length ? "" : `<span class="hint" style="align-self:center">Shared</span>`}</div></div>`).join("");
+    <div class="chips">${P.map(p => `<button type="button" class="chip sm${it.who.includes(p) ? " on" : ""}" data-act="itemwho" data-i="${i}" data-v="${esc(p)}">${esc(p)}${it.wt && it.wt[p] > 1 ? " ×" + it.wt[p] : ""}</button>`).join("")}${it.who.length ? "" : `<span class="hint" style="align-self:center">Shared</span>`}</div></div>`).join("");
   const isNew = !D.id;
   openSheet(`
     <div class="sheet-head"><h2>${DOPT.fromAi ? "Check this" : isNew ? "New expense" : "Edit expense"}</h2><button class="iconbtn" data-act="close">${isNew && DOPT.queue ? "Discard" : "Close"}</button></div>
@@ -455,7 +471,7 @@ function renderEdit(){
       <div class="field" style="margin:0"><label class="lbl" for="eTot">Total paid</label><input id="eTot" inputmode="decimal" data-f="total" value="${esc(D.totalStr)}" placeholder="0.00"></div>
     </div>
     <div class="field"><span class="lbl">Paid by</span><div class="chips">${chips(P, D.payer ? [D.payer] : [], "epayer")}</div></div>
-    <div class="field"><span class="lbl">Shared by (for anything not assigned below)</span><div class="chips">${chips(P, D.who.length ? D.who : P, "ewho")}</div></div>
+    <div class="field"><span class="lbl">Shares (use + and − for an unequal split)</span><div class="steps">${P.map(p => `<div class="step"><span>${esc(p)}</span><button type="button" class="x" data-act="dec" data-v="${esc(p)}" aria-label="Fewer shares for ${esc(p)}">−</button><b>${cnt(p)}</b><button type="button" class="x" data-act="inc" data-v="${esc(p)}" aria-label="More shares for ${esc(p)}">+</button></div>`).join("")}</div><div class="hint">Everyone at 1 is an equal split. 0 leaves someone out. Items assigned below override this.</div></div>
     <div class="sec" style="margin-top:6px">Items</div>
     <div class="hint" style="margin:-4px 2px 8px">Tap names to say who had an item. No names means it is shared.</div>
     ${items || `<div class="hint" style="margin-bottom:8px">No items. The total is split equally among the people above.</div>`}
@@ -517,8 +533,9 @@ document.addEventListener("click", async e => {
     case "addgo": submitAdd(); break;
     case "edit": edit(el.dataset.id); break;
     case "epayer": D.payer = D.payer === v ? null : v; renderEdit(); break;
+    case "inc": case "dec": { const m = Object.fromEntries(S.people.map(p => [p, cnt(p)])); m[v] = Math.max(0, Math.min(20, m[v] + (a === "inc" ? 1 : -1))); applyCounts(m); renderEdit(); break; }
     case "ewho": { const cur = D.who.length ? D.who : [...S.people]; let n = toggle(cur, v); if (!n.length) n = cur; D.who = n.length === S.people.length ? [] : n; renderEdit(); break; }
-    case "itemwho": { const it = D.items[i]; it.who = toggle(it.who, v); if (it.who.length === S.people.length) it.who = []; renderEdit(); break; }
+    case "itemwho": { const it = D.items[i]; it.who = toggle(it.who, v); it.wt = {}; if (it.who.length === S.people.length) it.who = []; renderEdit(); break; }
     case "additem": D.items.push({name: "", priceStr: "", who: []}); renderEdit(); break;
     case "rmitem": D.items.splice(i, 1); renderEdit(); break;
     case "esave": saveEdit(); break;
@@ -541,7 +558,7 @@ async function copyText(t, quiet){
 function saveEdit(){
   const e = draftToExpense();
   if (e.totalC <= 0){ $("#eErr").textContent = "Enter the total paid."; return; }
-  const rec = {id: D.id || "e" + Date.now().toString(36), ts: D.ts || Date.now(), title: D.title.trim() || "Expense", payer: D.payer, totalC: e.totalC, who: e.who, items: e.items, thumb: D.thumb, note: D.note || ""};
+  const rec = {id: D.id || "e" + Date.now().toString(36), ts: D.ts || Date.now(), title: D.title.trim() || "Expense", payer: D.payer, totalC: e.totalC, who: e.who, wt: e.wt, items: e.items, thumb: D.thumb, note: D.note || ""};
   const idx = S.expenses.findIndex(x => x.id === rec.id);
   if (idx >= 0) S.expenses[idx] = rec; else S.expenses.push(rec);
   if (rec.payer) S.lastPayer = rec.payer;
@@ -555,7 +572,8 @@ function saveSettings(){
   if (names.some(n => !n) || new Set(names.map(n => n.toLowerCase())).size !== names.length){ toast("Each person needs a different name."); return; }
   const map = Object.fromEntries(S.people.map((p, i) => [p, names[i]]));
   const m = arr => (arr || []).map(x => map[x] || x);
-  S.expenses.forEach(e => { e.payer = map[e.payer] || e.payer; e.who = m(e.who); e.items.forEach(i => { i.who = m(i.who); }); });
+  const mw = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [map[k] || k, v]));
+  S.expenses.forEach(e => { e.payer = map[e.payer] || e.payer; e.who = m(e.who); e.wt = mw(e.wt); e.items.forEach(i => { i.who = m(i.who); i.wt = mw(i.wt); }); });
   S.people = names; if (S.lastPayer) S.lastPayer = map[S.lastPayer] || S.lastPayer;
   const k = $("#key"); if (k) LS.set("tcitab.key", k.value.trim());
   save(); closeSheet(); render(); toast("Saved");

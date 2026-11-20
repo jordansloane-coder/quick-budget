@@ -411,10 +411,14 @@ async function submitAdd(){
   catch (e) { errCode = e.code || "bad_reply"; if (errCode === "cancelled" && A.timedOut) errCode = "timeout"; }
   clearTimeout(timer); clearInterval(tick);
   if (add !== A) return;
-  const d = draftFrom(ai, add);
-  const queue = add.queue, total = add.total;
-  closeSheet();
-  openEdit(d, {queue, total, msg: errCode ? (AI_MSG[errCode] || AI_MSG.bad_reply) : null, fromAi: !!ai});
+  try {
+    const d = draftFrom(ai, add);
+    const queue = add.queue, total = add.total;
+    closeSheet();
+    openEdit(d, {queue, total, msg: errCode ? (AI_MSG[errCode] || AI_MSG.bad_reply) : null, fromAi: !!ai});
+  } catch (err) {
+    add.busy = false; renderAdd(); addErr("Could not read that receipt (" + (err && err.message || "error") + "). Try again, or remove the photo and type the total.");
+  }
 }
 function nextOrClose(queue, total){
   const q = queue ?? add?.queue ?? [], t = total ?? add?.total ?? 0;
@@ -424,14 +428,14 @@ function nextOrClose(queue, total){
 function draftFrom(ai, a){
   const P = S.people, nm = n => P.find(p => p.toLowerCase() === String(n || "").toLowerCase());
   const nms = arr => (Array.isArray(arr) ? arr : []).map(nm).filter(Boolean);
+  const nw = o => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).map(([k, v]) => [nm(k), Number(v)]).filter(([k, v]) => k && v > 0));
+  const wtAll = nw(ai && ai.weights);
   let who = a.who.length === P.length ? nms(ai && ai.participants) : [...a.who];
   if (who.length === P.length) who = [];
   const items = ((ai && ai.items) || []).filter(i => i && i.name != null).map(i => {
     let w = nms(i.who); if (w.length === P.length) w = [];
     return {name: String(i.name), priceStr: (Number(i.price) || 0).toFixed(2), who: w, wt: nw(i.weights)};
   });
-  const nw = o => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).map(([k, v]) => [nm(k), Number(v)]).filter(([k, v]) => k && v > 0));
-  const wtAll = nw(ai && ai.weights);
   if (Object.keys(wtAll).length){ who = Object.keys(wtAll); if (who.length === P.length) who = []; }
   const tot = a.amount ? a.amount : (ai && Number(ai.total) > 0 ? Number(ai.total).toFixed(2) : "");
   return {id: null, title: a.title.trim() || (ai && ai.title) || "Expense", payer: a.payer || nm(ai && ai.payer) || null, totalStr: tot, who, wt: wtAll, items, thumb: a.photo ? a.photo.thumb : null, note: a.note.trim()};

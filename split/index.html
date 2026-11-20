@@ -166,7 +166,7 @@ async function loadDb(){
     DB = db; LS.set("tcitab.v1", JSON.stringify(S)); render(); syncDb();
   } catch { toast("Could not reach online storage. Saving on this phone only."); }
 }
-let tab = "exp", SAMPLE = null;
+let tab = "exp", SAMPLE = null, settleMode = "min";
 
 /* ---------- money math (cents, largest remainder) ---------- */
 function alloc(amount, weights){
@@ -197,10 +197,11 @@ function shares(e){
 }
 function balances(){
   const P = S.people, paid = Object.fromEntries(P.map(p => [p, 0])), share = {...paid};
+  const owes = Object.fromEntries(P.map(a => [a, Object.fromEntries(P.map(b => [b, 0]))]));
   for (const e of S.expenses){
     if (!P.includes(e.payer)) continue;
     paid[e.payer] += e.totalC;
-    const sh = shares(e); P.forEach(p => { share[p] += sh[p]; });
+    const sh = shares(e); P.forEach(p => { share[p] += sh[p]; if (p !== e.payer) owes[p][e.payer] += sh[p]; });
   }
   const net = Object.fromEntries(P.map(p => [p, paid[p] - share[p]]));
   const cred = P.filter(p => net[p] > 0).map(p => ({p, c: net[p]})).sort((a, b) => b.c - a.c);
@@ -212,7 +213,10 @@ function balances(){
     debt[i].c -= m; cred[j].c -= m;
     if (!debt[i].c) i++; if (!cred[j].c) j++;
   }
-  return {paid, share, net, xf};
+  const pairs = [];
+  P.forEach((a, i) => P.slice(i + 1).forEach(b => { const d = owes[a][b] - owes[b][a]; if (d > 0) pairs.push({from: a, to: b, c: d}); else if (d < 0) pairs.push({from: b, to: a, c: -d}); }));
+  pairs.sort((x, y) => y.c - x.c);
+  return {paid, share, net, xf, pairs};
 }
 
 /* ---------- main views ---------- */
@@ -234,20 +238,22 @@ function listView(){
   }).join("");
   return `<div class="list">${rows}</div>`;
 }
-function summaryText(b){
-  if (!b.xf.length) return "All square. Nobody owes anything.";
-  return "Trip settle-up:\n" + b.xf.map(x => `${x.from} pays ${x.to} ${fmt(x.c)}`).join("\n");
+function summaryText(list){
+  if (!list.length) return "All square. Nobody owes anything.";
+  return "Trip settle-up:\n" + list.map(x => `${x.from} pays ${x.to} ${fmt(x.c)}`).join("\n");
 }
 function settleView(){
-  const b = balances(), P = S.people;
+  const b = balances(), P = S.people, list = settleMode === "pair" ? b.pairs : b.xf;
   const missing = S.expenses.filter(e => !P.includes(e.payer)).length;
   const people = P.map(p => `<div class="row"><div><div class="n">${esc(p)}</div><div class="d">Paid ${fmt(b.paid[p])} · Share ${fmt(b.share[p])}</div></div><div class="net ${b.net[p] > 0 ? "pos" : b.net[p] < 0 ? "neg" : ""}">${b.net[p] > 0 ? "gets back " : b.net[p] < 0 ? "owes " : ""}${fmt(Math.abs(b.net[p]))}</div></div>`).join("");
-  const xf = b.xf.length ? b.xf.map(x => `<div class="card xfer"><div class="who">${esc(x.from)} <span style="color:var(--muted)">pays</span> ${esc(x.to)}</div><div class="amt">${fmt(x.c)}</div></div>`).join("") : `<div class="card empty">${S.expenses.length ? "All square." : "Add expenses to see who owes what."}</div>`;
+  const xf = list.length ? list.map(x => `<div class="card xfer"><div class="who">${esc(x.from)} <span style="color:var(--muted)">pays</span> ${esc(x.to)}</div><div class="amt">${fmt(x.c)}</div></div>`).join("") : `<div class="card empty">${S.expenses.length ? "All square." : "Add expenses to see who owes what."}</div>`;
   return `${missing ? `<div class="banner warn">${missing} expense${missing > 1 ? "s have" : " has"} no payer and ${missing > 1 ? "are" : "is"} left out. Tap them on the Expenses tab.</div>` : ""}
-  <div class="sec">Who pays whom</div><div class="list">${xf}</div>
+  <div class="seg" style="margin:14px 0 0"><button data-act="smode" data-v="min" class="${settleMode === "min" ? "on" : ""}">Fewest payments</button><button data-act="smode" data-v="pair" class="${settleMode === "pair" ? "on" : ""}">Exact, by person</button></div>
+  <div class="hint" style="margin:8px 2px 0">${settleMode === "pair" ? "Each line nets out what those two people paid for each other. Everyone ends up in the same place as the fewest-payments view." : "Routes money through the fewest payments. Everyone ends up in the same place as the exact view."}</div>
+  <div class="sec" style="margin-top:12px">Who pays whom</div><div class="list">${xf}</div>
   <div class="sec">Everyone's balance</div><div class="card">${people}</div>
   <div class="sec">Message for the group chat</div>
-  <textarea class="out" id="sumTxt" readonly>${esc(summaryText(b))}</textarea>
+  <textarea class="out" id="sumTxt" readonly>${esc(summaryText(list))}</textarea>
   <button class="btn" style="margin-top:8px;width:100%" data-act="copysum">Copy</button>`;
 }
 
@@ -533,6 +539,7 @@ document.addEventListener("click", async e => {
   if (a === "scrim"){ if (e.target === el && !(add && add.busy)) closeSheet(); return; }
   switch (a){
     case "tab": tab = v; render(); break;
+    case "smode": settleMode = v; render(); break;
     case "add": openAdd(); break;
     case "cancelai": if (add && add.ctl) add.ctl.abort(); break;
     case "close": if (add && add.ctl) add.ctl.abort(); closeSheet(); break;

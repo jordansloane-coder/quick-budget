@@ -315,7 +315,8 @@ function renderAdd(){
       <textarea id="note" rows="2" placeholder="e.g. I got the lemon chicken and the cocktail">${esc(add.note)}</textarea></div>
     ${add.showWho ? `<div class="field"><span class="lbl">Split among</span><div class="chips">${chips(S.people, add.who, "who")}</div></div>` : `<button type="button" class="btn" style="width:100%;margin-bottom:6px" data-act="showwho">Split among: ${add.who.length === S.people.length ? "everyone" : esc(add.who.join(", "))} · change</button>`}
     <div class="err" id="addErr"></div>
-    <button class="primary" id="addGo" data-act="addgo">${add.busy ? `<span class="spin"></span>Reading…` : "Add expense"}</button>`);
+    <button class="primary" id="addGo" data-act="addgo">${add.busy ? `<span class="spin"></span>Reading…` : "Add expense"}</button>
+    ${add.busy ? `<div class="hint" style="margin-top:8px">Reading a receipt usually takes 5 to 20 seconds.</div><button class="btn" style="width:100%;margin-top:8px" data-act="cancelai">Skip reading, enter by hand</button>` : ""}`);
   $("#camIn").onchange = e => { if (e.target.files[0]) addPhoto(e.target.files[0]); };
   $("#libIn").onchange = e => {
     const fs = [...e.target.files]; if (!fs.length) return;
@@ -353,9 +354,9 @@ function parseJson(t){
   if (s < 0 || e < 0) throw {code: "bad_reply"};
   return JSON.parse(raw.slice(s, e + 1));
 }
-async function askAI(prompt, blob){
+async function askAI(prompt, blob, signal){
   if (SAMPLE){
-    try { return await SAMPLE.json(prompt, {images: blob ? [blob] : undefined, cache: false}); }
+    try { return await SAMPLE.json(prompt, {images: blob ? [blob] : undefined, cache: false, modelTier: "quick", signal}); }
     catch (e) { throw {code: e.code || "ai_failed"}; }
   }
   const key = LS.get("tcitab.key");
@@ -369,17 +370,19 @@ async function askAI(prompt, blob){
   let res;
   try {
     res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
+      method: "POST", signal,
       headers: {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true"},
       body: JSON.stringify({model: "claude-sonnet-5-5", max_tokens: 2500, messages: [{role: "user", content}]})
     });
-  } catch { throw {code: "network"}; }
+  } catch (e) { throw {code: e && e.name === "AbortError" ? "cancelled" : "network"}; }
   if (res.status === 401) throw {code: "bad_key"};
   if (!res.ok) throw {code: "http_" + res.status};
   const j = await res.json();
   try { return parseJson((j.content || []).map(c => c.text || "").join("")); } catch { throw {code: "bad_reply"}; }
 }
 const AI_MSG = {
+  cancelled: "Skipped reading the receipt. Fill in the details by hand.",
+  timeout: "Reading took too long, so I stopped it. Fill in the details by hand, or try the photo again.",
   no_key: "Add your Claude API key in Settings to read receipts. Fill in the details by hand for now.",
   bad_key: "Your Claude API key was rejected. Check it in Settings.",
   network: "No connection to Claude. Fill in the details by hand, or try again.",
@@ -401,8 +404,13 @@ async function submitAdd(){
   }
   add.busy = true; renderAdd();
   let ai = null, errCode = null;
-  try { ai = await askAI(buildPrompt(add, !!add.photo), add.photo && add.photo.blob); }
-  catch (e) { errCode = e.code || "bad_reply"; }
+  const A = add; A.timedOut = false; A.ctl = new AbortController();
+  const timer = setTimeout(() => { A.timedOut = true; A.ctl.abort(); }, 75000), t0 = Date.now();
+  const tick = setInterval(() => { const b = $("#addGo"); if (b && add === A) b.innerHTML = `<span class="spin"></span>Reading… ${Math.round((Date.now() - t0) / 1000)}s`; }, 1000);
+  try { ai = await askAI(buildPrompt(A, !!A.photo), A.photo && A.photo.blob, A.ctl.signal); }
+  catch (e) { errCode = e.code || "bad_reply"; if (errCode === "cancelled" && A.timedOut) errCode = "timeout"; }
+  clearTimeout(timer); clearInterval(tick);
+  if (add !== A) return;
   const d = draftFrom(ai, add);
   const queue = add.queue, total = add.total;
   closeSheet();
@@ -522,7 +530,8 @@ document.addEventListener("click", async e => {
   switch (a){
     case "tab": tab = v; render(); break;
     case "add": openAdd(); break;
-    case "close": closeSheet(); break;
+    case "cancelai": if (add && add.ctl) add.ctl.abort(); break;
+    case "close": if (add && add.ctl) add.ctl.abort(); closeSheet(); break;
     case "settings": openSettings(); break;
     case "cam": $("#camIn").click(); break;
     case "lib": $("#libIn").click(); break;
